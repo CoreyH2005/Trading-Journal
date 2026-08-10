@@ -100,6 +100,10 @@ function loadState() {
   if (!localStorage.getItem(STORAGE_KEYS.playbook)) {
     seedPlaybook();
   }
+  if (state.accounts.length && !state.accounts.some(a => a.isLeader)) {
+    const guess = state.accounts.find(a => /\(leader\)/i.test(a.name));
+    if (guess) { guess.isLeader = true; saveAccounts(); }
+  }
 }
 function saveAccounts() { localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(state.accounts)); }
 function saveTrades() { localStorage.setItem(STORAGE_KEYS.trades, JSON.stringify(state.trades)); }
@@ -594,7 +598,7 @@ function renderAccountsPage() {
     <div class="account-card">
       <div class="account-card-top">
         <div>
-          <div class="account-name">${escapeHtml(a.name)}</div>
+          <div class="account-name">${escapeHtml(a.name)}${a.isLeader ? ' <span class="leader-badge">LEADER</span>' : ''}</div>
           <div class="account-firm">${escapeHtml(a.firm || '')}</div>
         </div>
         <div class="account-status ${a.status}">${a.status}</div>
@@ -628,6 +632,7 @@ function editAccount(id) {
   document.getElementById('accountTarget').value = a.target || '';
   document.getElementById('accountMaxDD').value = a.maxDrawdown || '';
   document.getElementById('accountDailyLimit').value = a.dailyLimit || '';
+  document.getElementById('accountLeaderToggle').classList.toggle('on', !!a.isLeader);
   openModal('accountModalOverlay');
 }
 function deleteAccount(id) {
@@ -643,7 +648,12 @@ document.getElementById('addAccountBtn').addEventListener('click', () => {
   document.getElementById('accountForm').reset();
   document.getElementById('accountFirm').value = 'Topstep';
   document.getElementById('accountStarting').value = 150000;
+  document.getElementById('accountLeaderToggle').classList.remove('on');
   openModal('accountModalOverlay');
+});
+
+document.getElementById('accountLeaderToggle').addEventListener('click', function () {
+  this.classList.toggle('on');
 });
 
 document.getElementById('accountForm').addEventListener('submit', e => {
@@ -655,8 +665,12 @@ document.getElementById('accountForm').addEventListener('submit', e => {
     startingBalance: parseFloat(document.getElementById('accountStarting').value) || 0,
     target: parseFloat(document.getElementById('accountTarget').value) || 0,
     maxDrawdown: parseFloat(document.getElementById('accountMaxDD').value) || 0,
-    dailyLimit: parseFloat(document.getElementById('accountDailyLimit').value) || 0
+    dailyLimit: parseFloat(document.getElementById('accountDailyLimit').value) || 0,
+    isLeader: document.getElementById('accountLeaderToggle').classList.contains('on')
   };
+  if (data.isLeader) {
+    state.accounts.forEach(a => { a.isLeader = false; });
+  }
   if (state.editingAccountId) {
     const acc = getAccount(state.editingAccountId);
     Object.assign(acc, data);
@@ -675,6 +689,7 @@ function renderJournal() {
   const sessionF = document.getElementById('filterSession').value;
   const modelF = document.getElementById('filterModel').value;
   const searchF = document.getElementById('filterSearch').value.toLowerCase();
+  const rangeF = document.getElementById('filterDateRange').value;
 
   let trades = getTrades().slice().reverse();
   if (outcomeF === 'win') trades = trades.filter(t => t.pnl > 0);
@@ -683,6 +698,19 @@ function renderJournal() {
   if (sessionF) trades = trades.filter(t => t.session === sessionF);
   if (modelF) trades = trades.filter(t => t.model === modelF);
   if (searchF) trades = trades.filter(t => (t.note || '').toLowerCase().includes(searchF));
+
+  const today = todayISO();
+  let dateFrom = null, dateTo = null;
+  if (rangeF === 'today') { dateFrom = today; dateTo = today; }
+  else if (rangeF === '7d') { dateFrom = isoOf(addDays(new Date(), -6)); dateTo = today; }
+  else if (rangeF === '30d') { dateFrom = isoOf(addDays(new Date(), -29)); dateTo = today; }
+  else if (rangeF === 'thisMonth') { dateFrom = today.slice(0, 7) + '-01'; dateTo = today; }
+  else if (rangeF === 'custom') {
+    dateFrom = document.getElementById('filterDateFrom').value || null;
+    dateTo = document.getElementById('filterDateTo').value || null;
+  }
+  if (dateFrom) trades = trades.filter(t => t.date >= dateFrom);
+  if (dateTo) trades = trades.filter(t => t.date <= dateTo);
 
   const list = document.getElementById('journalList');
   if (!trades.length) {
@@ -696,7 +724,7 @@ function renderJournal() {
     <div class="trade-entry ${outcomeCls}">
       <div class="trade-entry-pnl-col">
         <div class="trade-entry-pnl ${t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtMoney(t.pnl, { forceSign: true })}</div>
-        <div class="trade-entry-date">${fmtDateShort(t.date)}</div>
+        <div class="trade-entry-date">${fmtDateShort(t.date)}${t.entryTime ? ' · ' + t.entryTime : ''}</div>
         ${t.rMultiple ? `<div class="trade-entry-date">${t.rMultiple}R</div>` : ''}
       </div>
       <div>
@@ -708,6 +736,7 @@ function renderJournal() {
           ${t.timeframe ? `<span class="badge badge-tf">${escapeHtml(t.timeframe)}</span>` : ''}
           ${t.premiumDiscount ? `<span class="badge badge-pd badge-pd-${t.premiumDiscount.toLowerCase()}">${escapeHtml(t.premiumDiscount)}</span>` : ''}
           ${!t.ruleFollowed ? `<span class="badge badge-rule-broken">Rule broken</span>` : ''}
+          ${t.copiedFromLeader ? `<span class="badge badge-tf" title="Auto-copied from leader account">Copied</span>` : ''}
           ${(t.mistakeTags || []).map(m => `<span class="badge badge-rule-broken">${escapeHtml(m)}</span>`).join('')}
         </div>
         <div class="trade-entry-note">${escapeHtml(t.note || 'No notes added.')}</div>
@@ -722,8 +751,15 @@ function renderJournal() {
   }).join('');
 }
 
-['filterOutcome', 'filterSession', 'filterModel', 'filterSearch'].forEach(id => {
+['filterOutcome', 'filterSession', 'filterModel', 'filterSearch', 'filterDateFrom', 'filterDateTo'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderJournal);
+});
+document.getElementById('filterDateRange').addEventListener('change', function () {
+  const isCustom = this.value === 'custom';
+  document.getElementById('filterDateFrom').classList.toggle('hidden', !isCustom);
+  document.getElementById('filterDateTo').classList.toggle('hidden', !isCustom);
+  document.getElementById('filterDateToSep').classList.toggle('hidden', !isCustom);
+  renderJournal();
 });
 
 function viewTradeDetail(id) {
@@ -739,6 +775,7 @@ function viewTradeDetail(id) {
       <div class="detail-stat"><div class="detail-stat-label">Net P&L</div><div class="detail-stat-value" style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtMoney(t.pnl, { forceSign: true })}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">R Multiple</div><div class="detail-stat-value">${t.rMultiple || '—'}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Hold time</div><div class="detail-stat-value">${t.holdMinutes ? t.holdMinutes + ' min' : '—'}</div></div>
+      <div class="detail-stat"><div class="detail-stat-label">Entered at</div><div class="detail-stat-value" style="font-size:14px;">${t.entryTime || '—'}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Account</div><div class="detail-stat-value" style="font-size:12px;">${acc ? escapeHtml(acc.name) : '—'}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Session</div><div class="detail-stat-value" style="font-size:12px;">${escapeHtml(t.session)}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Model</div><div class="detail-stat-value" style="font-size:12px;">${escapeHtml(t.model)}</div></div>
@@ -821,6 +858,7 @@ function openLogTradeModal() {
   populateAccountSelect();
   populateSetupSelect();
   document.getElementById('tradeDate').value = todayISO();
+  document.getElementById('tradeTime').value = new Date().toTimeString().slice(0, 5);
   document.getElementById('tradeSymbol').value = 'NQ';
   document.getElementById('tradeContracts').value = 1;
   document.getElementById('ruleToggle').classList.add('on');
@@ -842,6 +880,7 @@ function editTrade(id) {
   document.getElementById('tradeAccount').value = t.accountId;
   document.getElementById('tradeSymbol').value = t.symbol;
   document.getElementById('tradeDate').value = t.date;
+  document.getElementById('tradeTime').value = t.entryTime || '';
   document.getElementById('tradeDirection').value = t.direction;
   document.getElementById('tradeSession').value = t.session;
   populateSetupSelect();
@@ -910,6 +949,7 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
     accountId: document.getElementById('tradeAccount').value,
     symbol: document.getElementById('tradeSymbol').value.trim().toUpperCase() || 'NQ',
     date: document.getElementById('tradeDate').value,
+    entryTime: document.getElementById('tradeTime').value,
     direction: document.getElementById('tradeDirection').value,
     session: document.getElementById('tradeSession').value,
     model: modelTag,
@@ -927,17 +967,31 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
     screenshots: state.pendingScreenshots.slice(),
     screenshot: state.pendingScreenshots[0] || null
   };
+  let copiedCount = 0;
   if (state.editingTradeId) {
     const t = state.trades.find(x => x.id === state.editingTradeId);
     Object.assign(t, data);
   } else {
     data.id = uid();
     state.trades.push(data);
+
+    const sourceAccount = getAccount(data.accountId);
+    if (sourceAccount && sourceAccount.isLeader) {
+      state.accounts.forEach(a => {
+        if (a.id === data.accountId) return;
+        const copy = JSON.parse(JSON.stringify(data));
+        copy.id = uid();
+        copy.accountId = a.id;
+        copy.copiedFromLeader = true;
+        state.trades.push(copy);
+        copiedCount++;
+      });
+    }
   }
   saveTrades();
   closeModal('tradeModalOverlay');
   renderDashboard(); renderJournal();
-  showToast('Trade saved');
+  showToast(copiedCount ? `Trade saved and copied to ${copiedCount} other account${copiedCount > 1 ? 's' : ''}` : 'Trade saved');
 });
 
 /* ---------------- Playbook page ---------------- */
