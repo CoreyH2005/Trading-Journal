@@ -705,6 +705,8 @@ function renderJournal() {
           <span class="badge ${t.direction === 'LONG' ? 'badge-long' : 'badge-short'}">${t.direction}</span>
           <span class="badge badge-session">${escapeHtml(t.session)}</span>
           <span class="badge badge-model">${escapeHtml(t.setupName || t.model)}</span>
+          ${t.timeframe ? `<span class="badge badge-tf">${escapeHtml(t.timeframe)}</span>` : ''}
+          ${t.premiumDiscount ? `<span class="badge badge-pd badge-pd-${t.premiumDiscount.toLowerCase()}">${escapeHtml(t.premiumDiscount)}</span>` : ''}
           ${!t.ruleFollowed ? `<span class="badge badge-rule-broken">Rule broken</span>` : ''}
           ${(t.mistakeTags || []).map(m => `<span class="badge badge-rule-broken">${escapeHtml(m)}</span>`).join('')}
         </div>
@@ -740,6 +742,8 @@ function viewTradeDetail(id) {
       <div class="detail-stat"><div class="detail-stat-label">Account</div><div class="detail-stat-value" style="font-size:12px;">${acc ? escapeHtml(acc.name) : '—'}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Session</div><div class="detail-stat-value" style="font-size:12px;">${escapeHtml(t.session)}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Model</div><div class="detail-stat-value" style="font-size:12px;">${escapeHtml(t.model)}</div></div>
+      <div class="detail-stat"><div class="detail-stat-label">Timeframe</div><div class="detail-stat-value" style="font-size:12px;">${t.timeframe ? escapeHtml(t.timeframe) : '—'}</div></div>
+      <div class="detail-stat"><div class="detail-stat-label">Premium / discount</div><div class="detail-stat-value" style="font-size:12px;">${t.premiumDiscount ? escapeHtml(t.premiumDiscount) : '—'}</div></div>
     </div>
     <div style="font-size:13px; color:var(--text-secondary); line-height:1.6;">${escapeHtml(t.note || 'No notes added.')}</div>
   `;
@@ -846,6 +850,8 @@ function editTrade(id) {
   document.getElementById('tradePnl').value = t.pnl;
   document.getElementById('tradeR').value = t.rMultiple || '';
   document.getElementById('tradeHold').value = t.holdMinutes || '';
+  document.getElementById('tradeTimeframe').value = t.timeframe || '';
+  document.getElementById('tradePremiumDiscount').value = t.premiumDiscount || '';
   document.getElementById('tradeNote').value = t.note || '';
   document.getElementById('ruleToggle').classList.toggle('on', t.ruleFollowed);
   document.querySelectorAll('#mistakeChips .chip').forEach(c => c.classList.toggle('selected', state.selectedMistakeTags.includes(c.dataset.tag)));
@@ -913,6 +919,8 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
     pnl: parseFloat(document.getElementById('tradePnl').value) || 0,
     rMultiple: document.getElementById('tradeR').value ? parseFloat(document.getElementById('tradeR').value) : null,
     holdMinutes: document.getElementById('tradeHold').value ? parseFloat(document.getElementById('tradeHold').value) : null,
+    timeframe: document.getElementById('tradeTimeframe').value,
+    premiumDiscount: document.getElementById('tradePremiumDiscount').value,
     ruleFollowed: state.ruleFollowed,
     mistakeTags: state.selectedMistakeTags.slice(),
     note: document.getElementById('tradeNote').value.trim(),
@@ -1060,6 +1068,29 @@ function renderBreakdown() {
     renderTable('breakdownSetupTable', rowsFor(setupGroups), 'Setup');
   } else {
     setupRow.style.display = 'none';
+  }
+
+  const withTf = trades.filter(t => t.timeframe);
+  const withPd = trades.filter(t => t.premiumDiscount);
+  const tfPdRow = document.getElementById('breakdownTfPdRow');
+  if (withTf.length || withPd.length) {
+    tfPdRow.style.display = '';
+    if (withTf.length) {
+      const tfGroups = {};
+      withTf.forEach(t => { if (!tfGroups[t.timeframe]) tfGroups[t.timeframe] = []; tfGroups[t.timeframe].push(t); });
+      renderTable('breakdownTfTable', rowsFor(tfGroups), 'Timeframe');
+    } else {
+      document.getElementById('breakdownTfTable').innerHTML = `<tbody><tr><td style="color:var(--text-muted); padding:16px 8px;">No timeframe data logged yet</td></tr></tbody>`;
+    }
+    if (withPd.length) {
+      const pdGroups = {};
+      withPd.forEach(t => { if (!pdGroups[t.premiumDiscount]) pdGroups[t.premiumDiscount] = []; pdGroups[t.premiumDiscount].push(t); });
+      renderTable('breakdownPdTable', rowsFor(pdGroups), 'Zone');
+    } else {
+      document.getElementById('breakdownPdTable').innerHTML = `<tbody><tr><td style="color:var(--text-muted); padding:16px 8px;">No premium/discount data logged yet</td></tr></tbody>`;
+    }
+  } else {
+    tfPdRow.style.display = 'none';
   }
 
   const ruleGroups = groupBy(t => t.ruleFollowed ? 'Rule followed' : 'Rule broken');

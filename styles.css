@@ -651,6 +651,10 @@ button, input, select, textarea {
 .badge-session { color: var(--blue); border-color: rgba(76,141,255,0.3); background: var(--blue-soft); }
 .badge-model { color: var(--gold); border-color: rgba(232,184,75,0.3); background: var(--gold-soft); }
 .badge-rule-broken { color: var(--red); }
+.badge-tf { color: var(--text-secondary); border-color: var(--border); background: var(--bg-elevated-2); }
+.badge-pd-premium { color: var(--red); border-color: rgba(255,92,92,0.3); background: var(--red-soft); }
+.badge-pd-discount { color: var(--green); border-color: rgba(62,207,142,0.3); background: var(--green-soft); }
+.badge-pd-equilibrium { color: var(--text-secondary); border-color: var(--border); background: var(--bg-elevated-2); }
 
 .trade-entry-note { font-size: 13px; color: var(--text-secondary); line-height: 1.55; }
 .trade-entry-note b { color: var(--text-primary); }
