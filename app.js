@@ -37,7 +37,8 @@ let state = {
   editingTradeId: null,
   editingAccountId: null,
   editingSetupId: null,
-  pendingScreenshot: null,
+  pendingScreenshots: [],
+  currentDetailImages: [],
   selectedMistakeTags: [],
   ruleFollowed: true,
   csvRows: null,
@@ -708,7 +709,7 @@ function renderJournal() {
           ${(t.mistakeTags || []).map(m => `<span class="badge badge-rule-broken">${escapeHtml(m)}</span>`).join('')}
         </div>
         <div class="trade-entry-note">${escapeHtml(t.note || 'No notes added.')}</div>
-        ${t.screenshot ? `<div style="margin-top:8px;"><span class="view-chart-link" onclick="viewTradeDetail('${t.id}')">View chart →</span></div>` : ''}
+        ${(t.screenshots && t.screenshots.length) ? `<div style="margin-top:8px;"><span class="view-chart-link" onclick="viewTradeDetail('${t.id}')">View ${t.screenshots.length > 1 ? t.screenshots.length + ' charts' : 'chart'} →</span></div>` : ''}
       </div>
       <div class="trade-entry-actions">
         <button class="icon-btn" onclick="viewTradeDetail('${t.id}')" title="View">${ICONS.view}</button>
@@ -728,8 +729,10 @@ function viewTradeDetail(id) {
   if (!t) return;
   state.editingTradeId = id;
   const acc = getAccount(t.accountId);
+  const images = (t.screenshots && t.screenshots.length) ? t.screenshots : (t.screenshot ? [t.screenshot] : []);
+  state.currentDetailImages = images;
   document.getElementById('detailModalBody').innerHTML = `
-    ${t.screenshot ? `<img class="detail-img" src="${t.screenshot}">` : ''}
+    ${images.length ? `<div class="detail-gallery">${images.map((src, i) => `<img src="${src}" onclick="openLightboxFrom(state.currentDetailImages, ${i})">`).join('')}</div>` : ''}
     <div class="detail-grid">
       <div class="detail-stat"><div class="detail-stat-label">Net P&L</div><div class="detail-stat-value" style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtMoney(t.pnl, { forceSign: true })}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">R Multiple</div><div class="detail-stat-value">${t.rMultiple || '—'}</div></div>
@@ -777,10 +780,36 @@ document.getElementById('tradeModel').addEventListener('change', function () {
   }
 });
 
+function renderThumbGrid() {
+  const grid = document.getElementById('tradeThumbGrid');
+  grid.innerHTML = state.pendingScreenshots.map((src, i) => `
+    <div class="thumb-item" onclick="openLightboxFrom(state.pendingScreenshots, ${i})">
+      <img src="${src}">
+      <div class="thumb-remove" onclick="event.stopPropagation(); removePendingScreenshot(${i})">✕</div>
+    </div>`).join('');
+  document.getElementById('tradeFileDropText').textContent = state.pendingScreenshots.length
+    ? `${state.pendingScreenshots.length} screenshot${state.pendingScreenshots.length > 1 ? 's' : ''} attached — click to add more`
+    : 'Click to upload chart screenshots';
+}
+function removePendingScreenshot(i) {
+  state.pendingScreenshots.splice(i, 1);
+  renderThumbGrid();
+}
+
+let lightboxSource = [];
+function openLightboxFrom(source, i) {
+  lightboxSource = source;
+  document.getElementById('lightboxImg').src = source[parseInt(i, 10)];
+  document.getElementById('lightboxOverlay').classList.add('open');
+}
+document.getElementById('lightboxOverlay').addEventListener('click', () => {
+  document.getElementById('lightboxOverlay').classList.remove('open');
+});
+
 function openLogTradeModal() {
   if (!state.accounts.length) { alert('Add an account first — go to Accounts and create one.'); return; }
   state.editingTradeId = null;
-  state.pendingScreenshot = null;
+  state.pendingScreenshots = [];
   state.selectedMistakeTags = [];
   state.ruleFollowed = true;
   document.getElementById('tradeModalTitle').textContent = 'Log trade';
@@ -792,9 +821,7 @@ function openLogTradeModal() {
   document.getElementById('tradeContracts').value = 1;
   document.getElementById('ruleToggle').classList.add('on');
   document.querySelectorAll('#mistakeChips .chip').forEach(c => c.classList.remove('selected'));
-  document.getElementById('tradeFileDropText').textContent = 'Click to upload a chart screenshot';
-  const existingImg = document.querySelector('#tradeFileDrop img');
-  if (existingImg) existingImg.remove();
+  renderThumbGrid();
   openModal('tradeModalOverlay');
 }
 
@@ -802,7 +829,7 @@ function editTrade(id) {
   const t = state.trades.find(x => x.id === id);
   if (!t) return;
   state.editingTradeId = id;
-  state.pendingScreenshot = t.screenshot || null;
+  state.pendingScreenshots = (t.screenshots && t.screenshots.length) ? t.screenshots.slice() : (t.screenshot ? [t.screenshot] : []);
   state.selectedMistakeTags = (t.mistakeTags || []).slice();
   state.ruleFollowed = t.ruleFollowed;
 
@@ -822,18 +849,7 @@ function editTrade(id) {
   document.getElementById('tradeNote').value = t.note || '';
   document.getElementById('ruleToggle').classList.toggle('on', t.ruleFollowed);
   document.querySelectorAll('#mistakeChips .chip').forEach(c => c.classList.toggle('selected', state.selectedMistakeTags.includes(c.dataset.tag)));
-
-  const dropText = document.getElementById('tradeFileDropText');
-  const existingImg = document.querySelector('#tradeFileDrop img');
-  if (existingImg) existingImg.remove();
-  if (t.screenshot) {
-    dropText.textContent = 'Screenshot attached — click to replace';
-    const img = document.createElement('img');
-    img.src = t.screenshot;
-    document.getElementById('tradeFileDrop').appendChild(img);
-  } else {
-    dropText.textContent = 'Click to upload a chart screenshot';
-  }
+  renderThumbGrid();
   openModal('tradeModalOverlay');
 }
 
@@ -857,19 +873,19 @@ document.querySelectorAll('#mistakeChips .chip').forEach(chip => {
 
 document.getElementById('tradeFileDrop').addEventListener('click', () => document.getElementById('tradeScreenshot').click());
 document.getElementById('tradeScreenshot').addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => {
-    state.pendingScreenshot = ev.target.result;
-    document.getElementById('tradeFileDropText').textContent = 'Screenshot attached — click to replace';
-    const existingImg = document.querySelector('#tradeFileDrop img');
-    if (existingImg) existingImg.remove();
-    const img = document.createElement('img');
-    img.src = state.pendingScreenshot;
-    document.getElementById('tradeFileDrop').appendChild(img);
-  };
-  reader.readAsDataURL(file);
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  let remaining = files.length;
+  files.forEach(file => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      state.pendingScreenshots.push(ev.target.result);
+      remaining--;
+      if (remaining === 0) renderThumbGrid();
+    };
+    reader.readAsDataURL(file);
+  });
+  e.target.value = '';
 });
 
 document.getElementById('tradeForm').addEventListener('submit', e => {
@@ -900,7 +916,8 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
     ruleFollowed: state.ruleFollowed,
     mistakeTags: state.selectedMistakeTags.slice(),
     note: document.getElementById('tradeNote').value.trim(),
-    screenshot: state.pendingScreenshot
+    screenshots: state.pendingScreenshots.slice(),
+    screenshot: state.pendingScreenshots[0] || null
   };
   if (state.editingTradeId) {
     const t = state.trades.find(x => x.id === state.editingTradeId);

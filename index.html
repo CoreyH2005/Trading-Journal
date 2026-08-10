@@ -456,11 +456,12 @@
         </div>
 
         <div class="form-field full">
-          <label>Chart screenshot (optional)</label>
+          <label>Chart screenshots (optional, multiple allowed)</label>
           <div class="file-drop" id="tradeFileDrop">
-            <span id="tradeFileDropText">Click to upload a chart screenshot</span>
-            <input type="file" id="tradeScreenshot" accept="image/*" style="display:none;">
+            <span id="tradeFileDropText">Click to upload chart screenshots</span>
+            <input type="file" id="tradeScreenshot" accept="image/*" multiple style="display:none;">
           </div>
+          <div class="thumb-grid" id="tradeThumbGrid"></div>
         </div>
       </div>
 
@@ -626,6 +627,10 @@
       </div>
     </form>
   </div>
+</div>
+
+<div class="lightbox-overlay" id="lightboxOverlay">
+  <img id="lightboxImg" src="">
 </div>
 
 <script src="chart.umd.min.js"></script>
