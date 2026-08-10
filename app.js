@@ -3,6 +3,16 @@
    App logic. All data in localStorage.
    ============================================ */
 
+const ICONS = {
+  view: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+  warning: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
+  flag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/></svg>',
+  editLarge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>'
+};
+
 const STORAGE_KEYS = {
   accounts: 'edge_accounts_v1',
   trades: 'edge_trades_v1',
@@ -294,7 +304,7 @@ function renderCrossAccountToday() {
         </tr>`).join('')}</tbody>
     </table>
     ${correlated.length ? `<div style="margin-top:12px; padding:10px 12px; background:var(--gold-soft); border:1px solid rgba(232,184,75,0.3); border-radius:var(--radius-sm); font-size:12px; color:var(--gold);">
-      ⚠ ${correlated.length} trade${correlated.length > 1 ? 's' : ''} today matched across multiple accounts (same symbol, direction, session, setup) — the worst of those hit ${maxSpread} account${maxSpread > 1 ? 's' : ''} at once. One bad read is really a ${maxSpread}x hit, not 1x.
+      ${ICONS.warning} ${correlated.length} trade${correlated.length > 1 ? 's' : ''} today matched across multiple accounts (same symbol, direction, session, setup) — the worst of those hit ${maxSpread} account${maxSpread > 1 ? 's' : ''} at once. One bad read is really a ${maxSpread}x hit, not 1x.
     </div>` : ''}
   `;
 }
@@ -352,7 +362,7 @@ function renderDailyLimitAlert(trades, account) {
     <div class="card" style="border-color:${danger ? 'var(--red)' : 'var(--border)'}; margin-bottom:16px; padding:14px 18px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
         <div style="font-size:13px; font-weight:600; color:${danger ? 'var(--red)' : 'var(--text-primary)'};">
-          ${danger ? '⚠ ' : ''}Daily loss limit — ${account.name}
+          ${danger ? ICONS.warning + ' ' : ''}Daily loss limit — ${account.name}
         </div>
         <div style="font-family:var(--font-mono); font-size:13px;">${fmtMoney(used)} / ${fmtMoney(account.dailyLimit)}</div>
       </div>
@@ -367,7 +377,7 @@ function renderStreak(trades, stats) {
   }
   document.getElementById('streakRow').innerHTML = `
     <div class="streak-item">
-      <div class="streak-icon">⚑</div>
+      <div class="streak-icon">${ICONS.flag}</div>
       <div><div class="streak-num">${streak}</div><div class="streak-label">trade streak, plan followed</div></div>
     </div>
     <div class="streak-item">
@@ -567,7 +577,7 @@ document.getElementById('calNextBtn').addEventListener('click', () => {
 function renderAccountsPage() {
   const grid = document.getElementById('accountsGrid');
   if (!state.accounts.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="empty-state-icon">◈</div><div class="empty-state-title">No accounts yet</div><div class="empty-state-sub">Add your first funded or evaluation account to start tracking.</div></div>`;
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg></div><div class="empty-state-title">No accounts yet</div><div class="empty-state-sub">Add your first funded or evaluation account to start tracking.</div></div>`;
     return;
   }
   grid.innerHTML = state.accounts.map(a => {
@@ -675,7 +685,7 @@ function renderJournal() {
 
   const list = document.getElementById('journalList');
   if (!trades.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">☰</div><div class="empty-state-title">No trades match</div><div class="empty-state-sub">Log a trade or adjust your filters.</div></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div><div class="empty-state-title">No trades match</div><div class="empty-state-sub">Log a trade or adjust your filters.</div></div>`;
     return;
   }
 
@@ -701,9 +711,9 @@ function renderJournal() {
         ${t.screenshot ? `<div style="margin-top:8px;"><span class="view-chart-link" onclick="viewTradeDetail('${t.id}')">View chart →</span></div>` : ''}
       </div>
       <div class="trade-entry-actions">
-        <button class="icon-btn" onclick="viewTradeDetail('${t.id}')" title="View">⤢</button>
-        <button class="icon-btn" onclick="editTrade('${t.id}')" title="Edit">✎</button>
-        <button class="icon-btn" onclick="deleteTrade('${t.id}')" title="Delete">🗑</button>
+        <button class="icon-btn" onclick="viewTradeDetail('${t.id}')" title="View">${ICONS.view}</button>
+        <button class="icon-btn" onclick="editTrade('${t.id}')" title="Edit">${ICONS.edit}</button>
+        <button class="icon-btn" onclick="deleteTrade('${t.id}')" title="Delete">${ICONS.trash}</button>
       </div>
     </div>`;
   }).join('');
@@ -910,7 +920,7 @@ function renderPlaybook() {
   document.getElementById('playbookRules').value = state.playbook.rules || '';
   const list = document.getElementById('setupsList');
   if (!state.playbook.setups.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◆</div><div class="empty-state-title">No setups documented yet</div><div class="empty-state-sub">Add your A+ models so every trade can be graded against them.</div></div>`;
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></div><div class="empty-state-title">No setups documented yet</div><div class="empty-state-sub">Add your A+ models so every trade can be graded against them.</div></div>`;
     return;
   }
   list.innerHTML = state.playbook.setups.map(s => `
@@ -924,8 +934,8 @@ function renderPlaybook() {
           </div>
         </div>
         <div style="display:flex; gap:6px;">
-          <button class="icon-btn" onclick="editSetup('${s.id}')" title="Edit">✎</button>
-          <button class="icon-btn" onclick="deleteSetup('${s.id}')" title="Delete">🗑</button>
+          <button class="icon-btn" onclick="editSetup('${s.id}')" title="Edit">${ICONS.edit}</button>
+          <button class="icon-btn" onclick="deleteSetup('${s.id}')" title="Delete">${ICONS.trash}</button>
         </div>
       </div>
       <div style="font-size:12.5px; color:var(--text-secondary); margin-bottom:8px;"><b style="color:var(--text-primary);">Entry:</b> ${escapeHtml(s.entry || '—')}</div>
@@ -1072,12 +1082,12 @@ function renderBreakdown() {
 function renderCertificates() {
   const grid = document.getElementById('certificatesGrid');
   if (!state.certificates.length) {
-    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="empty-state-icon">✓</div><div class="empty-state-title">No documents yet</div><div class="empty-state-sub">Upload XFA certificates, payout confirmations, or account docs.</div></div>`;
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="empty-state-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div><div class="empty-state-title">No documents yet</div><div class="empty-state-sub">Upload XFA certificates, payout confirmations, or account docs.</div></div>`;
     return;
   }
   grid.innerHTML = state.certificates.slice().reverse().map(c => `
     <div class="account-card">
-      ${c.isImage ? `<img src="${c.fileData}" style="width:100%; border-radius:8px; margin-bottom:10px; border:1px solid var(--border);">` : `<div style="height:100px; display:flex; align-items:center; justify-content:center; background:var(--bg-elevated-2); border-radius:8px; margin-bottom:10px; font-size:28px; color:var(--text-muted);">📄</div>`}
+      ${c.isImage ? `<img src="${c.fileData}" style="width:100%; border-radius:8px; margin-bottom:10px; border:1px solid var(--border);">` : `<div style="height:100px; width:100%; margin-bottom:10px; display:flex; align-items:center; justify-content:center; background:var(--bg-elevated-2); border-radius:8px; color:var(--text-muted);"><span style="width:32px; height:32px; display:block;">${ICONS.file}</span></div>`}
       <div class="account-name" style="font-size:13px;">${escapeHtml(c.name)}</div>
       <div class="account-firm">${fmtDateShort(c.date)}</div>
       <div style="display:flex; gap:8px; margin-top:12px;">
@@ -1134,7 +1144,7 @@ function renderExpenses() {
       <td><span class="badge">${escapeHtml(e.category)}</span></td>
       <td style="font-size:12.5px; color:var(--text-secondary);">${escapeHtml(e.note || '—')}</td>
       <td class="pnl-neg">${fmtMoney(e.amount)}</td>
-      <td><button class="icon-btn" onclick="deleteExpense('${e.id}')" title="Delete">🗑</button></td>
+      <td><button class="icon-btn" onclick="deleteExpense('${e.id}')" title="Delete">${ICONS.trash}</button></td>
     </tr>`).join('');
 }
 
@@ -1198,7 +1208,7 @@ function renderReview() {
 function renderPastReviews() {
   const sorted = state.reviews.slice().sort((a, b) => b.weekStart.localeCompare(a.weekStart));
   const list = document.getElementById('pastReviewsList');
-  if (!sorted.length) { list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">✎</div><div class="empty-state-title">No reviews yet</div><div class="empty-state-sub">Save your first weekly review above.</div></div>`; return; }
+  if (!sorted.length) { list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">${ICONS.editLarge}</div><div class="empty-state-title">No reviews yet</div><div class="empty-state-sub">Save your first weekly review above.</div></div>`; return; }
   list.innerHTML = sorted.map(r => {
     const start = new Date(r.weekStart + 'T00:00:00');
     const end = addDays(start, 6);
