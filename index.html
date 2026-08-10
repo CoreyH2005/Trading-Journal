@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EDGE — Trading Journal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============ SIDEBAR ============ -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-mark"><span class="dot"></span>EDGE</div>
+    <div class="brand-sub">Trade journal — funded accounts</div>
+  </div>
+
+  <div class="account-switcher">
+    <select id="accountSwitcher"></select>
+  </div>
+
+  <ul class="nav-list">
+    <li class="nav-item active" data-page="dashboard">
+      <span class="nav-icon">▦</span> Dashboard
+    </li>
+    <li class="nav-item" data-page="accounts">
+      <span class="nav-icon">◈</span> Accounts
+    </li>
+    <li class="nav-item" data-page="journal">
+      <span class="nav-icon">☰</span> Journal
+    </li>
+    <li class="nav-item" data-page="review">
+      <span class="nav-icon">✎</span> Review
+    </li>
+    <div class="nav-divider"></div>
+    <li class="nav-item" data-page="playbook">
+      <span class="nav-icon">◆</span> Playbook
+    </li>
+    <li class="nav-item" data-page="breakdown">
+      <span class="nav-icon">◫</span> Breakdown
+    </li>
+    <li class="nav-item" data-page="certificates">
+      <span class="nav-icon">✓</span> Certificates
+    </li>
+    <li class="nav-item" data-page="expenses">
+      <span class="nav-icon">$</span> Expenses
+    </li>
+    <div class="nav-divider"></div>
+    <li class="nav-item" data-page="import">
+      <span class="nav-icon">⇅</span> Import / Backup
+    </li>
+  </ul>
+
+  <button class="nav-cta" id="logTradeBtn">+ Log trade</button>
+</aside>
+
+<!-- ============ MAIN ============ -->
+<main class="main">
+
+  <!-- ===== DASHBOARD ===== -->
+  <section class="page active" id="page-dashboard">
+    <div class="welcome-strip">
+      <div>
+        <div class="welcome-title" id="welcomeTitle">Welcome, Corey</div>
+        <div class="welcome-meta" id="welcomeMeta">—</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn" id="exportQuickBtn">Export backup</button>
+        <button class="btn btn-primary" id="dashLogTradeBtn">+ Log trade</button>
+      </div>
+    </div>
+
+    <div class="stat-grid" id="statGrid"></div>
+
+    <div class="dash-row">
+      <div class="card">
+        <div class="card-title">Account balance</div>
+        <div class="card-sub" id="balanceCardSub">Cumulative equity from starting balance</div>
+        <div class="chart-box" style="height:200px;"><canvas id="balanceChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Edge Score</div>
+        <div class="card-sub">Composite of win%, profit factor, consistency &amp; drawdown</div>
+        <div class="edge-score-wrap">
+          <div class="chart-box" style="height:190px; width:190px; flex-shrink:0;"><canvas id="edgeRadarChart"></canvas></div>
+          <div style="flex:1;">
+            <div class="edge-score-value" id="edgeScoreValue">—</div>
+            <div class="edge-score-tag">out of 100</div>
+            <div class="edge-gauge-bar"><div class="edge-gauge-marker" id="edgeGaugeMarker" style="left:0%"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-row-3">
+      <div class="card">
+        <div class="card-title">Plan adherence</div>
+        <div class="card-sub" id="streakCardSub">Rule-followed trade streak</div>
+        <div class="streak-row" id="streakRow"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Daily net P&amp;L</div>
+        <div class="card-sub">Last 14 sessions</div>
+        <div class="chart-box" style="height:120px;"><canvas id="dailyPnlChart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Drawdown</div>
+        <div class="card-sub">Off peak equity</div>
+        <div class="chart-box" style="height:120px;"><canvas id="drawdownChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="dash-row">
+      <div class="card">
+        <div class="card-title">Session grid — <span id="calendarMonthLabelTop"></span></div>
+        <div class="card-sub">Daily P&amp;L by session</div>
+        <div class="calendar-wrap">
+          <div>
+            <div class="calendar-nav">
+              <button class="btn btn-sm btn-ghost" id="calPrevBtn">‹ Prev</button>
+              <div class="calendar-month-label" id="calendarMonthLabel"></div>
+              <button class="btn btn-sm btn-ghost" id="calNextBtn">Next ›</button>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+          </div>
+          <div class="weekly-totals" id="weeklyTotals"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Recent trades</div>
+        <div class="card-sub">Last 6 closed</div>
+        <table class="mini-table">
+          <thead><tr><th>Date</th><th>Symbol</th><th>Net P&amp;L</th></tr></thead>
+          <tbody id="recentTradesBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== ACCOUNTS ===== -->
+  <section class="page" id="page-accounts">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Accounts</div>
+        <div class="page-sub">Manage every funded / evaluation account in one place</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" id="addAccountBtn">+ Add account</button>
+      </div>
+    </div>
+    <div class="accounts-grid" id="accountsGrid"></div>
+  </section>
+
+  <!-- ===== JOURNAL ===== -->
+  <section class="page" id="page-journal">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Journal</div>
+        <div class="page-sub">Every trade, with the reasoning behind it</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-primary" id="journalLogTradeBtn">+ Log trade</button>
+      </div>
+    </div>
+    <div class="journal-filters">
+      <select id="filterOutcome">
+        <option value="">All outcomes</option>
+        <option value="win">Wins</option>
+        <option value="loss">Losses</option>
+        <option value="be">Breakeven</option>
+      </select>
+      <select id="filterSession">
+        <option value="">All sessions</option>
+        <option value="ASIA">Asia</option>
+        <option value="LONDON">London</option>
+        <option value="NY AM">NY AM</option>
+        <option value="NY PM">NY PM</option>
+      </select>
+      <select id="filterModel">
+        <option value="">All models</option>
+        <option value="iFVG">iFVG</option>
+        <option value="FVG">FVG</option>
+        <option value="Order Block">Order Block</option>
+        <option value="Liquidity Sweep">Liquidity Sweep</option>
+        <option value="Other">Other</option>
+      </select>
+      <input type="text" id="filterSearch" placeholder="Search notes...">
+    </div>
+    <div id="journalList"></div>
+  </section>
+
+  <!-- ===== REVIEW ===== -->
+  <section class="page" id="page-review">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Weekly review</div>
+        <div class="page-sub" id="reviewWeekLabel">—</div>
+      </div>
+      <div class="page-actions">
+        <button class="btn btn-ghost btn-sm" id="reviewPrevWeekBtn">‹ Prev week</button>
+        <button class="btn btn-ghost btn-sm" id="reviewNextWeekBtn">Next week ›</button>
+      </div>
+    </div>
+
+    <div class="review-summary" id="reviewSummary"></div>
+
+    <div class="card">
+      <div class="review-form-section">
+        <label>What worked — do more of this</label>
+        <div class="hint">Setups, sessions, behaviours that made money</div>
+        <textarea id="reviewWorked" placeholder="e.g. NY AM iFVG continuation entries after a clean liquidity sweep..."></textarea>
+      </div>
+      <div class="review-form-section">
+        <label>What to cut — stop doing this</label>
+        <div class="hint">Mistakes, leaks, rule breaks</div>
+        <textarea id="reviewCut" placeholder="e.g. Revenge entries after the first loss of the session..."></textarea>
+      </div>
+      <div class="review-form-section">
+        <label>Focus for next week</label>
+        <div class="hint">One or two concrete commitments</div>
+        <textarea id="reviewFocus" placeholder="e.g. No trades outside the AM window. Journal every entry before the close..."></textarea>
+      </div>
+      <button class="btn btn-primary" id="saveReviewBtn">Save review</button>
+    </div>
+
+    <div style="margin-top:22px;">
+      <div class="card-title" style="margin-bottom:12px;">Past reviews</div>
+      <div id="pastReviewsList"></div>
+    </div>
+  </section>
+
+  <!-- ===== STUB PAGES ===== -->
+  <section class="page" id="page-playbook">
+    <div class="page-header"><div><div class="page-title">Playbook</div><div class="page-sub">Your documented setups &amp; rules</div></div></div>
+    <div class="stub-page">
+      <div class="stub-icon">◆</div>
+      <div class="stub-title">Playbook — coming next</div>
+      <div class="stub-desc">This is where your iFVG model rules, entry checklists, and A+ setup criteria will live so every trade in the Journal can be graded against a documented plan. Flag it for next session and we'll build it out.</div>
+    </div>
+  </section>
+
+  <section class="page" id="page-breakdown">
+    <div class="page-header"><div><div class="page-title">Breakdown</div><div class="page-sub">Performance sliced by session, model, and instrument</div></div></div>
+    <div class="stub-page">
+      <div class="stub-icon">◫</div>
+      <div class="stub-title">Breakdown — coming next</div>
+      <div class="stub-desc">Deeper cuts of your Journal data: win rate by session, expectancy by model tag, performance by day-of-week and time-of-day. Once you've logged enough trades this becomes genuinely useful — flag it for next session.</div>
+    </div>
+  </section>
+
+  <section class="page" id="page-certificates">
+    <div class="page-header"><div><div class="page-title">Certificates</div><div class="page-sub">Funded account documents &amp; payout proof</div></div></div>
+    <div class="stub-page">
+      <div class="stub-icon">✓</div>
+      <div class="stub-title">Certificates — coming next</div>
+      <div class="stub-desc">A place to store XFA certificates, payout confirmations, and account docs per funded account. Flag it for next session and we'll wire up file storage.</div>
+    </div>
+  </section>
+
+  <section class="page" id="page-expenses">
+    <div class="page-header"><div><div class="page-title">Expenses</div><div class="page-sub">Cost of doing business</div></div></div>
+    <div class="stub-page">
+      <div class="stub-icon">$</div>
+      <div class="stub-title">Expenses — coming next</div>
+      <div class="stub-desc">Track evaluation fees, platform/data costs, and resets against your net payouts to see true take-home. Flag it for next session.</div>
+    </div>
+  </section>
+
+  <!-- ===== IMPORT / BACKUP ===== -->
+  <section class="page" id="page-import">
+    <div class="page-header">
+      <div><div class="page-title">Import / Backup</div><div class="page-sub">Bring trades in from a CSV, or back up your data</div></div>
+    </div>
+
+    <div class="data-actions-grid">
+      <div class="card">
+        <div class="card-title">Import CSV</div>
+        <div class="card-sub">Upload a broker/prop-firm export and map the columns</div>
+        <input type="file" id="csvFileInput" accept=".csv" style="margin-bottom:10px;">
+        <div id="csvMappingArea"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Backup &amp; restore</div>
+        <div class="card-sub">Your data lives in this browser's local storage — export regularly</div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <button class="btn" id="exportJsonBtn">⇩ Export full backup (.json)</button>
+          <button class="btn" id="exportCsvBtn">⇩ Export trades (.csv)</button>
+          <div>
+            <label style="font-size:11.5px; color:var(--text-muted); display:block; margin-bottom:6px;">Restore from backup</label>
+            <input type="file" id="restoreFileInput" accept=".json">
+          </div>
+          <button class="btn btn-danger" id="clearDataBtn">Clear all data</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============ MODAL: LOG / EDIT TRADE ============ -->
+<div class="modal-overlay" id="tradeModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="tradeModalTitle">Log trade</div>
+      <button class="icon-btn" data-close-modal="tradeModalOverlay">✕</button>
+    </div>
+    <form id="tradeForm">
+      <input type="hidden" id="tradeId">
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Account</label>
+          <select id="tradeAccount" required></select>
+        </div>
+        <div class="form-field">
+          <label>Symbol</label>
+          <input type="text" id="tradeSymbol" value="NQ" required>
+        </div>
+        <div class="form-field">
+          <label>Date</label>
+          <input type="date" id="tradeDate" required>
+        </div>
+        <div class="form-field">
+          <label>Direction</label>
+          <select id="tradeDirection">
+            <option value="LONG">Long</option>
+            <option value="SHORT">Short</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Session</label>
+          <select id="tradeSession">
+            <option value="ASIA">Asia</option>
+            <option value="LONDON">London</option>
+            <option value="NY AM" selected>NY AM</option>
+            <option value="NY PM">NY PM</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Model / setup</label>
+          <select id="tradeModel">
+            <option value="iFVG">iFVG</option>
+            <option value="FVG">FVG</option>
+            <option value="Order Block">Order Block</option>
+            <option value="Liquidity Sweep">Liquidity Sweep</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Contracts</label>
+          <input type="number" id="tradeContracts" value="1" step="1" min="0">
+        </div>
+        <div class="form-field">
+          <label>Net P&amp;L ($)</label>
+          <input type="number" id="tradePnl" step="0.01" required placeholder="e.g. 450 or -220">
+        </div>
+        <div class="form-field">
+          <label>R multiple</label>
+          <input type="number" id="tradeR" step="0.1" placeholder="e.g. 2.3">
+        </div>
+        <div class="form-field">
+          <label>Holding time (min)</label>
+          <input type="number" id="tradeHold" step="1" placeholder="e.g. 18">
+        </div>
+
+        <div class="form-field full">
+          <label>Rule followed?</label>
+          <div class="toggle-row">
+            <span style="font-size:12.5px; color:var(--text-secondary);">Traded fully within your plan</span>
+            <div class="toggle-switch on" id="ruleToggle"></div>
+          </div>
+        </div>
+
+        <div class="form-field full">
+          <label>Mistake tags (optional)</label>
+          <div class="chip-select" id="mistakeChips">
+            <div class="chip" data-tag="Early entry">Early entry</div>
+            <div class="chip" data-tag="Late entry">Late entry</div>
+            <div class="chip" data-tag="Moved stop">Moved stop</div>
+            <div class="chip" data-tag="Oversized">Oversized</div>
+            <div class="chip" data-tag="Revenge trade">Revenge trade</div>
+            <div class="chip" data-tag="FOMO">FOMO</div>
+            <div class="chip" data-tag="No setup">No setup</div>
+            <div class="chip" data-tag="Cut winner early">Cut winner early</div>
+          </div>
+        </div>
+
+        <div class="form-field full">
+          <label>Notes / reasoning</label>
+          <textarea id="tradeNote" placeholder="What did you see? Why did you take it? What would you do differently?"></textarea>
+        </div>
+
+        <div class="form-field full">
+          <label>Chart screenshot (optional)</label>
+          <div class="file-drop" id="tradeFileDrop">
+            <span id="tradeFileDropText">Click to upload a chart screenshot</span>
+            <input type="file" id="tradeScreenshot" accept="image/*" style="display:none;">
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="tradeModalOverlay">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save trade</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MODAL: TRADE DETAIL ============ -->
+<div class="modal-overlay" id="detailModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Trade detail</div>
+      <button class="icon-btn" data-close-modal="detailModalOverlay">✕</button>
+    </div>
+    <div id="detailModalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="detailDeleteBtn">Delete trade</button>
+      <button class="btn btn-primary" id="detailEditBtn">Edit trade</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ MODAL: ADD ACCOUNT ============ -->
+<div class="modal-overlay" id="accountModalOverlay">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title" id="accountModalTitle">Add account</div>
+      <button class="icon-btn" data-close-modal="accountModalOverlay">✕</button>
+    </div>
+    <form id="accountForm">
+      <input type="hidden" id="accountId">
+      <div class="form-grid">
+        <div class="form-field full">
+          <label>Account name</label>
+          <input type="text" id="accountName" placeholder="e.g. Topstep 150K #1" required>
+        </div>
+        <div class="form-field">
+          <label>Prop firm</label>
+          <input type="text" id="accountFirm" placeholder="Topstep" value="Topstep">
+        </div>
+        <div class="form-field">
+          <label>Status</label>
+          <select id="accountStatus">
+            <option value="active">Active</option>
+            <option value="passed">Funded / Passed</option>
+            <option value="failed">Failed</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Starting balance ($)</label>
+          <input type="number" id="accountStarting" value="150000" step="0.01" required>
+        </div>
+        <div class="form-field">
+          <label>Profit target ($)</label>
+          <input type="number" id="accountTarget" value="9000" step="0.01">
+        </div>
+        <div class="form-field">
+          <label>Max drawdown ($)</label>
+          <input type="number" id="accountMaxDD" value="4500" step="0.01">
+        </div>
+        <div class="form-field">
+          <label>Daily loss limit ($)</label>
+          <input type="number" id="accountDailyLimit" value="3000" step="0.01">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="accountModalOverlay">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save account</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="chart.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
