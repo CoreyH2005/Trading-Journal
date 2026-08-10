@@ -67,6 +67,14 @@ Log evaluation fees, resets, platform/data costs. Shows total, this month, and t
 
 If an account has a daily loss limit set (edit the account to add one) and you're down on the current day, a warning strip appears at the top of the Dashboard showing how much of that limit you've used — turns red past 70%. Only shows when a single account is selected, not "All accounts".
 
+## Setups are wired into the trade log
+
+The Log Trade form's Setup dropdown pulls live from your Playbook — pick a documented setup and the session field auto-fills to match. Trades linked to a setup show that setup's actual name in the Journal (not just a generic model tag), and Breakdown gets a "By setup" table so you can see which named setups actually make money, not just which model family. A "Generic tag" fallback stays available for trades that don't match a documented setup yet.
+
+## Cross-account correlated risk
+
+Since you're running the same trade across 5 accounts, a single bad read isn't a 1x loss — it's a 5x loss. The Dashboard (when "All accounts" is selected) shows a "Today across accounts" card: combined P&L for today, a per-account breakdown, and a warning when the same trade (same symbol, direction, session, setup) shows up across multiple accounts on the same day, with the real multiplied hit size called out explicitly.
+
 ## Mobile
 
 Below 900px the sidebar becomes a slide-out drawer (hamburger button top-left) instead of squeezing the layout. All grids collapse to single-column.

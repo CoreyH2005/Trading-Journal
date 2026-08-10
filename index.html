@@ -80,6 +80,7 @@
     </div>
 
     <div id="dailyLimitAlert" class="hidden"></div>
+    <div class="card hidden" id="crossAccountCard" style="margin-bottom:16px;"></div>
 
     <div class="stat-grid" id="statGrid"></div>
 
@@ -292,6 +293,13 @@
           <table class="mini-table" id="breakdownRuleTable"></table>
         </div>
       </div>
+      <div class="dash-row" id="breakdownSetupRow" style="display:none;">
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-title">By setup</div>
+          <div class="card-sub">Which named setups from your Playbook actually make money</div>
+          <table class="mini-table" id="breakdownSetupTable"></table>
+        </div>
+      </div>
       <div class="dash-row-3">
         <div class="stat-card"><div class="stat-label">Best trade</div><div class="stat-value positive" id="bdBestTrade">—</div></div>
         <div class="stat-card"><div class="stat-label">Worst trade</div><div class="stat-value negative" id="bdWorstTrade">—</div></div>
@@ -400,14 +408,8 @@
           </select>
         </div>
         <div class="form-field">
-          <label>Model / setup</label>
-          <select id="tradeModel">
-            <option value="iFVG">iFVG</option>
-            <option value="FVG">FVG</option>
-            <option value="Order Block">Order Block</option>
-            <option value="Liquidity Sweep">Liquidity Sweep</option>
-            <option value="Other">Other</option>
-          </select>
+          <label>Setup</label>
+          <select id="tradeModel"></select>
         </div>
         <div class="form-field">
           <label>Contracts</label>

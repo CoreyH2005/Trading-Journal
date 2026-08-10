@@ -251,6 +251,54 @@ function renderAccountSwitcher() {
 function escapeHtml(s) { return (s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 /* ---------------- Dashboard rendering ---------------- */
+function renderCrossAccountToday() {
+  const container = document.getElementById('crossAccountCard');
+  if (state.currentAccountId !== 'all' || state.accounts.length < 2) {
+    container.classList.add('hidden');
+    return;
+  }
+  const today = todayISO();
+  const todayTrades = state.trades.filter(t => t.date === today);
+  if (!todayTrades.length) { container.classList.add('hidden'); return; }
+  container.classList.remove('hidden');
+
+  const byAccount = state.accounts.map(a => {
+    const trades = todayTrades.filter(t => t.accountId === a.id);
+    return { account: a, trades, pnl: trades.reduce((s, t) => s + t.pnl, 0) };
+  });
+  const combinedPnl = todayTrades.reduce((s, t) => s + t.pnl, 0);
+
+  const groups = {};
+  todayTrades.forEach(t => {
+    const key = `${t.symbol}|${t.direction}|${t.session}|${t.setupId || t.model}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(t);
+  });
+  const correlated = Object.values(groups).filter(g => g.length > 1);
+  const maxSpread = correlated.length ? Math.max(...correlated.map(g => g.length)) : 0;
+
+  container.innerHTML = `
+    <div class="card-title">Today across accounts</div>
+    <div class="card-sub">Combined exposure across ${state.accounts.length} accounts — a repeated trade hits harder than it looks on one</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <span style="font-size:12.5px; color:var(--text-muted);">Combined P&amp;L today</span>
+      <span style="font-family:var(--font-mono); font-weight:700; font-size:17px;" class="${combinedPnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtMoney(combinedPnl, { forceSign: true })}</span>
+    </div>
+    <table class="mini-table">
+      <thead><tr><th>Account</th><th>Trades</th><th>Net P&amp;L</th></tr></thead>
+      <tbody>${byAccount.map(b => `
+        <tr>
+          <td>${escapeHtml(b.account.name)}</td>
+          <td style="font-family:var(--font-mono); color:var(--text-muted); font-size:11.5px;">${b.trades.length}</td>
+          <td class="${b.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${b.trades.length ? fmtMoney(b.pnl, { forceSign: true }) : '—'}</td>
+        </tr>`).join('')}</tbody>
+    </table>
+    ${correlated.length ? `<div style="margin-top:12px; padding:10px 12px; background:var(--gold-soft); border:1px solid rgba(232,184,75,0.3); border-radius:var(--radius-sm); font-size:12px; color:var(--gold);">
+      ⚠ ${correlated.length} trade${correlated.length > 1 ? 's' : ''} today matched across multiple accounts (same symbol, direction, session, setup) — the worst of those hit ${maxSpread} account${maxSpread > 1 ? 's' : ''} at once. One bad read is really a ${maxSpread}x hit, not 1x.
+    </div>` : ''}
+  `;
+}
+
 function renderDashboard() {
   const trades = getTrades();
   const account = state.currentAccountId === 'all' ? null : getAccount(state.currentAccountId);
@@ -262,6 +310,7 @@ function renderDashboard() {
   document.getElementById('welcomeMeta').textContent = `${today} — ${trades.length} trades on record${account ? ' · ' + account.name : ''}`;
 
   renderDailyLimitAlert(trades, account);
+  renderCrossAccountToday();
   renderStatGrid(stats);
   renderBalanceChart(trades, startingBalance, account);
   const equitySeries = computeEquitySeries(trades, startingBalance);
@@ -644,7 +693,7 @@ function renderJournal() {
           <span class="badge">${escapeHtml(t.symbol)}</span>
           <span class="badge ${t.direction === 'LONG' ? 'badge-long' : 'badge-short'}">${t.direction}</span>
           <span class="badge badge-session">${escapeHtml(t.session)}</span>
-          <span class="badge badge-model">${escapeHtml(t.model)}</span>
+          <span class="badge badge-model">${escapeHtml(t.setupName || t.model)}</span>
           ${!t.ruleFollowed ? `<span class="badge badge-rule-broken">Rule broken</span>` : ''}
           ${(t.mistakeTags || []).map(m => `<span class="badge badge-rule-broken">${escapeHtml(m)}</span>`).join('')}
         </div>
@@ -700,6 +749,24 @@ function populateAccountSelect() {
   if (state.currentAccountId !== 'all') sel.value = state.currentAccountId;
 }
 
+function populateSetupSelect() {
+  const sel = document.getElementById('tradeModel');
+  const generic = ['iFVG', 'FVG', 'Order Block', 'Liquidity Sweep', 'Other'];
+  let html = '';
+  if (state.playbook.setups.length) {
+    html += `<optgroup label="Your setups">` + state.playbook.setups.map(s => `<option value="setup:${s.id}">${escapeHtml(s.name)}</option>`).join('') + `</optgroup>`;
+  }
+  html += `<optgroup label="Generic tag">` + generic.map(g => `<option value="tag:${g}">${escapeHtml(g)}</option>`).join('') + `</optgroup>`;
+  sel.innerHTML = html;
+}
+
+document.getElementById('tradeModel').addEventListener('change', function () {
+  if (this.value.startsWith('setup:')) {
+    const s = state.playbook.setups.find(x => x.id === this.value.slice(6));
+    if (s) document.getElementById('tradeSession').value = s.session;
+  }
+});
+
 function openLogTradeModal() {
   if (!state.accounts.length) { alert('Add an account first — go to Accounts and create one.'); return; }
   state.editingTradeId = null;
@@ -709,6 +776,7 @@ function openLogTradeModal() {
   document.getElementById('tradeModalTitle').textContent = 'Log trade';
   document.getElementById('tradeForm').reset();
   populateAccountSelect();
+  populateSetupSelect();
   document.getElementById('tradeDate').value = todayISO();
   document.getElementById('tradeSymbol').value = 'NQ';
   document.getElementById('tradeContracts').value = 1;
@@ -735,7 +803,8 @@ function editTrade(id) {
   document.getElementById('tradeDate').value = t.date;
   document.getElementById('tradeDirection').value = t.direction;
   document.getElementById('tradeSession').value = t.session;
-  document.getElementById('tradeModel').value = t.model;
+  populateSetupSelect();
+  document.getElementById('tradeModel').value = t.setupId ? `setup:${t.setupId}` : `tag:${t.model}`;
   document.getElementById('tradeContracts').value = t.contracts;
   document.getElementById('tradePnl').value = t.pnl;
   document.getElementById('tradeR').value = t.rMultiple || '';
@@ -795,13 +864,25 @@ document.getElementById('tradeScreenshot').addEventListener('change', e => {
 
 document.getElementById('tradeForm').addEventListener('submit', e => {
   e.preventDefault();
+  const modelVal = document.getElementById('tradeModel').value;
+  let setupId = null, setupName = null, modelTag;
+  if (modelVal.startsWith('setup:')) {
+    setupId = modelVal.slice(6);
+    const s = state.playbook.setups.find(x => x.id === setupId);
+    modelTag = s ? s.model : 'Other';
+    setupName = s ? s.name : null;
+  } else {
+    modelTag = modelVal.slice(4) || 'Other';
+  }
   const data = {
     accountId: document.getElementById('tradeAccount').value,
     symbol: document.getElementById('tradeSymbol').value.trim().toUpperCase() || 'NQ',
     date: document.getElementById('tradeDate').value,
     direction: document.getElementById('tradeDirection').value,
     session: document.getElementById('tradeSession').value,
-    model: document.getElementById('tradeModel').value,
+    model: modelTag,
+    setupId: setupId,
+    setupName: setupName,
     contracts: parseFloat(document.getElementById('tradeContracts').value) || 0,
     pnl: parseFloat(document.getElementById('tradePnl').value) || 0,
     rMultiple: document.getElementById('tradeR').value ? parseFloat(document.getElementById('tradeR').value) : null,
@@ -942,6 +1023,17 @@ function renderBreakdown() {
 
   renderTable('breakdownSessionTable', rowsFor(groupBy(t => t.session)), 'Session');
   renderTable('breakdownModelTable', rowsFor(groupBy(t => t.model)), 'Model');
+
+  const withSetup = trades.filter(t => t.setupName);
+  const setupRow = document.getElementById('breakdownSetupRow');
+  if (withSetup.length) {
+    setupRow.style.display = '';
+    const setupGroups = {};
+    withSetup.forEach(t => { if (!setupGroups[t.setupName]) setupGroups[t.setupName] = []; setupGroups[t.setupName].push(t); });
+    renderTable('breakdownSetupTable', rowsFor(setupGroups), 'Setup');
+  } else {
+    setupRow.style.display = 'none';
+  }
 
   const ruleGroups = groupBy(t => t.ruleFollowed ? 'Rule followed' : 'Rule broken');
   renderTable('breakdownRuleTable', rowsFor(ruleGroups), 'Discipline');
