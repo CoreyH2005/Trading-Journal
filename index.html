@@ -441,16 +441,17 @@
         </div>
         <div class="form-field">
           <label>Execution timeframe</label>
-          <select id="tradeTimeframe">
-            <option value="">—</option>
-            <option value="1m">1m</option>
-            <option value="2m">2m</option>
-            <option value="3m">3m</option>
-            <option value="5m">5m</option>
-            <option value="15m">15m</option>
-            <option value="1h">1h</option>
-            <option value="Other">Other</option>
-          </select>
+          <input type="text" id="tradeTimeframe" list="timeframeOptions" placeholder="e.g. 1m, 3m, 90s..." autocomplete="off">
+          <datalist id="timeframeOptions">
+            <option value="15s">
+            <option value="30s">
+            <option value="1m">
+            <option value="2m">
+            <option value="3m">
+            <option value="5m">
+            <option value="15m">
+            <option value="1h">
+          </datalist>
         </div>
         <div class="form-field">
           <label>Premium / discount</label>

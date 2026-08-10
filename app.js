@@ -919,7 +919,7 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
     pnl: parseFloat(document.getElementById('tradePnl').value) || 0,
     rMultiple: document.getElementById('tradeR').value ? parseFloat(document.getElementById('tradeR').value) : null,
     holdMinutes: document.getElementById('tradeHold').value ? parseFloat(document.getElementById('tradeHold').value) : null,
-    timeframe: document.getElementById('tradeTimeframe').value,
+    timeframe: document.getElementById('tradeTimeframe').value.trim(),
     premiumDiscount: document.getElementById('tradePremiumDiscount').value,
     ruleFollowed: state.ruleFollowed,
     mistakeTags: state.selectedMistakeTags.slice(),
