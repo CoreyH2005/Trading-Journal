@@ -7,19 +7,26 @@ const STORAGE_KEYS = {
   accounts: 'edge_accounts_v1',
   trades: 'edge_trades_v1',
   reviews: 'edge_reviews_v1',
-  seeded: 'edge_seeded_v1'
+  seeded: 'edge_seeded_v1',
+  playbook: 'edge_playbook_v1',
+  certificates: 'edge_certificates_v1',
+  expenses: 'edge_expenses_v1'
 };
 
 let state = {
   accounts: [],
   trades: [],
   reviews: [],
+  playbook: { rules: '', setups: [] },
+  certificates: [],
+  expenses: [],
   currentAccountId: 'all',
   calendarMonth: new Date().getMonth(),
   calendarYear: new Date().getFullYear(),
   reviewWeekStart: startOfWeek(new Date()),
   editingTradeId: null,
   editingAccountId: null,
+  editingSetupId: null,
   pendingScreenshot: null,
   selectedMistakeTags: [],
   ruleFollowed: true,
@@ -68,17 +75,38 @@ function loadState() {
     state.accounts = JSON.parse(localStorage.getItem(STORAGE_KEYS.accounts)) || [];
     state.trades = JSON.parse(localStorage.getItem(STORAGE_KEYS.trades)) || [];
     state.reviews = JSON.parse(localStorage.getItem(STORAGE_KEYS.reviews)) || [];
+    state.playbook = JSON.parse(localStorage.getItem(STORAGE_KEYS.playbook)) || { rules: '', setups: [] };
+    state.certificates = JSON.parse(localStorage.getItem(STORAGE_KEYS.certificates)) || [];
+    state.expenses = JSON.parse(localStorage.getItem(STORAGE_KEYS.expenses)) || [];
   } catch (e) {
     state.accounts = []; state.trades = []; state.reviews = [];
+    state.playbook = { rules: '', setups: [] }; state.certificates = []; state.expenses = [];
   }
   if (!localStorage.getItem(STORAGE_KEYS.seeded) && state.accounts.length === 0) {
     seedDemoData();
     localStorage.setItem(STORAGE_KEYS.seeded, '1');
   }
+  if (!localStorage.getItem(STORAGE_KEYS.playbook)) {
+    seedPlaybook();
+  }
 }
 function saveAccounts() { localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(state.accounts)); }
 function saveTrades() { localStorage.setItem(STORAGE_KEYS.trades, JSON.stringify(state.trades)); }
 function saveReviews() { localStorage.setItem(STORAGE_KEYS.reviews, JSON.stringify(state.reviews)); }
+function savePlaybook() { localStorage.setItem(STORAGE_KEYS.playbook, JSON.stringify(state.playbook)); }
+function saveCertificates() { localStorage.setItem(STORAGE_KEYS.certificates, JSON.stringify(state.certificates)); }
+function saveExpenses() { localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(state.expenses)); }
+
+function seedPlaybook() {
+  state.playbook = {
+    rules: 'No trades outside Asia or NY AM unless an A+ NY PM setup prints.\nMax 2 losses per session, then done — no revenge sizing.\nEvery entry needs a clean liquidity sweep before the iFVG/FVG forms.\nNo moving stops out. Ever.\nJournal every trade the same day it happens, win or lose.',
+    setups: [
+      { id: uid(), name: 'NY AM iFVG continuation', session: 'NY AM', model: 'iFVG', entry: 'Liquidity sweep of a prior session high/low, displacement back through creating an iFVG, entry on the retrace into the iFVG with clean 5m structure supporting continuation.', invalid: 'Price closes back through the iFVG on the 5m before entry, or the sweep was into a level with no real liquidity behind it.' },
+      { id: uid(), name: 'Asia range sweep reversal', session: 'ASIA', model: 'Liquidity Sweep', entry: 'Asia session sweeps the prior day range high/low, rejects with a clear 1m/5m shift in structure, enter on retrace into the FVG left by the reversal leg.', invalid: 'No real displacement after the sweep — price just chops at the level instead of shifting structure.' }
+    ]
+  };
+  savePlaybook();
+}
 
 function seedDemoData() {
   const acc1 = { id: uid(), name: 'Topstep 150K #1', firm: 'Topstep', status: 'active', startingBalance: 150000, target: 9000, maxDrawdown: 4500, dailyLimit: 3000 };
@@ -193,8 +221,23 @@ function initNav() {
       if (item.dataset.page === 'accounts') renderAccountsPage();
       if (item.dataset.page === 'journal') renderJournal();
       if (item.dataset.page === 'review') renderReview();
+      if (item.dataset.page === 'playbook') renderPlaybook();
+      if (item.dataset.page === 'breakdown') renderBreakdown();
+      if (item.dataset.page === 'certificates') renderCertificates();
+      if (item.dataset.page === 'expenses') renderExpenses();
     });
   });
+}
+
+function initMobileDrawer() {
+  const sidebar = document.getElementById('sidebar');
+  const scrim = document.getElementById('sidebarScrim');
+  const btn = document.getElementById('mobileMenuBtn');
+  const open = () => { sidebar.classList.add('open'); scrim.classList.add('open'); };
+  const close = () => { sidebar.classList.remove('open'); scrim.classList.remove('open'); };
+  btn.addEventListener('click', open);
+  scrim.addEventListener('click', close);
+  document.querySelectorAll('.nav-item[data-page]').forEach(item => item.addEventListener('click', close));
 }
 
 function renderAccountSwitcher() {
@@ -218,6 +261,7 @@ function renderDashboard() {
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   document.getElementById('welcomeMeta').textContent = `${today} — ${trades.length} trades on record${account ? ' · ' + account.name : ''}`;
 
+  renderDailyLimitAlert(trades, account);
   renderStatGrid(stats);
   renderBalanceChart(trades, startingBalance, account);
   const equitySeries = computeEquitySeries(trades, startingBalance);
@@ -243,6 +287,28 @@ function renderStatGrid(stats) {
       <div class="stat-label">${c.label}</div>
       <div class="stat-value ${c.cls}">${c.value}</div>
     </div>`).join('');
+}
+
+function renderDailyLimitAlert(trades, account) {
+  const el = document.getElementById('dailyLimitAlert');
+  if (!account || !account.dailyLimit) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const today = todayISO();
+  const todayPnl = trades.filter(t => t.date === today).reduce((s, t) => s + t.pnl, 0);
+  if (todayPnl >= 0) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+  const used = Math.abs(todayPnl);
+  const pct = Math.min(100, (used / account.dailyLimit) * 100);
+  const danger = pct >= 70;
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="card" style="border-color:${danger ? 'var(--red)' : 'var(--border)'}; margin-bottom:16px; padding:14px 18px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div style="font-size:13px; font-weight:600; color:${danger ? 'var(--red)' : 'var(--text-primary)'};">
+          ${danger ? '⚠ ' : ''}Daily loss limit — ${account.name}
+        </div>
+        <div style="font-family:var(--font-mono); font-size:13px;">${fmtMoney(used)} / ${fmtMoney(account.dailyLimit)}</div>
+      </div>
+      <div class="progress-track"><div class="progress-fill drawdown" style="width:${pct}%"></div></div>
+    </div>`;
 }
 
 function renderStreak(trades, stats) {
@@ -475,11 +541,11 @@ function renderAccountsPage() {
       </div>
       <div class="account-balance" style="color:${netPnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtMoney(balance)}</div>
       ${a.target ? `<div class="progress-row">
-        <div class="progress-label"><span>Profit target</span><span>${fmtMoneyShort(netPnl)} / ${fmtMoneyShort(a.target)}</span></div>
+        <div class="progress-label"><span>Profit target</span><span>${fmtMoney(netPnl)} / ${fmtMoney(a.target)}</span></div>
         <div class="progress-track"><div class="progress-fill" style="width:${Math.max(0,targetPct)}%"></div></div>
       </div>` : ''}
       ${a.maxDrawdown ? `<div class="progress-row">
-        <div class="progress-label"><span>Drawdown used</span><span>${fmtMoneyShort(maxDD)} / ${fmtMoneyShort(a.maxDrawdown)}</span></div>
+        <div class="progress-label"><span>Drawdown used</span><span>${fmtMoney(maxDD)} / ${fmtMoney(a.maxDrawdown)}</span></div>
         <div class="progress-track"><div class="progress-fill drawdown" style="width:${ddPct}%"></div></div>
       </div>` : ''}
       <div style="display:flex; gap:8px; margin-top:12px;">
@@ -758,6 +824,256 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
   showToast('Trade saved');
 });
 
+/* ---------------- Playbook page ---------------- */
+function renderPlaybook() {
+  document.getElementById('playbookRules').value = state.playbook.rules || '';
+  const list = document.getElementById('setupsList');
+  if (!state.playbook.setups.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">◆</div><div class="empty-state-title">No setups documented yet</div><div class="empty-state-sub">Add your A+ models so every trade can be graded against them.</div></div>`;
+    return;
+  }
+  list.innerHTML = state.playbook.setups.map(s => `
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
+        <div>
+          <div class="card-title" style="margin-bottom:6px;">${escapeHtml(s.name)}</div>
+          <div class="trade-entry-badges" style="margin-bottom:0;">
+            <span class="badge badge-session">${escapeHtml(s.session)}</span>
+            <span class="badge badge-model">${escapeHtml(s.model)}</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:6px;">
+          <button class="icon-btn" onclick="editSetup('${s.id}')" title="Edit">✎</button>
+          <button class="icon-btn" onclick="deleteSetup('${s.id}')" title="Delete">🗑</button>
+        </div>
+      </div>
+      <div style="font-size:12.5px; color:var(--text-secondary); margin-bottom:8px;"><b style="color:var(--text-primary);">Entry:</b> ${escapeHtml(s.entry || '—')}</div>
+      <div style="font-size:12.5px; color:var(--text-secondary);"><b style="color:var(--red);">Invalidation:</b> ${escapeHtml(s.invalid || '—')}</div>
+    </div>`).join('');
+}
+
+document.getElementById('savePlaybookRulesBtn').addEventListener('click', () => {
+  state.playbook.rules = document.getElementById('playbookRules').value;
+  savePlaybook();
+  showToast('Trading plan saved');
+});
+
+document.getElementById('addSetupBtn').addEventListener('click', () => {
+  state.editingSetupId = null;
+  document.getElementById('setupModalTitle').textContent = 'Add setup';
+  document.getElementById('setupForm').reset();
+  openModal('setupModalOverlay');
+});
+
+function editSetup(id) {
+  const s = state.playbook.setups.find(x => x.id === id);
+  if (!s) return;
+  state.editingSetupId = id;
+  document.getElementById('setupModalTitle').textContent = 'Edit setup';
+  document.getElementById('setupName').value = s.name;
+  document.getElementById('setupSession').value = s.session;
+  document.getElementById('setupModel').value = s.model;
+  document.getElementById('setupEntry').value = s.entry || '';
+  document.getElementById('setupInvalid').value = s.invalid || '';
+  openModal('setupModalOverlay');
+}
+function deleteSetup(id) {
+  if (!confirm('Delete this setup?')) return;
+  state.playbook.setups = state.playbook.setups.filter(s => s.id !== id);
+  savePlaybook();
+  renderPlaybook();
+}
+
+document.getElementById('setupForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const data = {
+    name: document.getElementById('setupName').value.trim(),
+    session: document.getElementById('setupSession').value,
+    model: document.getElementById('setupModel').value,
+    entry: document.getElementById('setupEntry').value.trim(),
+    invalid: document.getElementById('setupInvalid').value.trim()
+  };
+  if (state.editingSetupId) {
+    Object.assign(state.playbook.setups.find(s => s.id === state.editingSetupId), data);
+  } else {
+    data.id = uid();
+    state.playbook.setups.push(data);
+  }
+  savePlaybook();
+  closeModal('setupModalOverlay');
+  renderPlaybook();
+  showToast('Setup saved');
+});
+
+/* ---------------- Breakdown page ---------------- */
+function renderBreakdown() {
+  const trades = getTrades();
+  document.getElementById('breakdownEmpty').classList.toggle('hidden', trades.length >= 3);
+  document.getElementById('breakdownContent').classList.toggle('hidden', trades.length < 3);
+  if (trades.length < 3) return;
+
+  const groupBy = keyFn => {
+    const groups = {};
+    trades.forEach(t => {
+      const k = keyFn(t);
+      if (!groups[k]) groups[k] = [];
+      groups[k].push(t);
+    });
+    return groups;
+  };
+  const rowsFor = groups => Object.entries(groups).map(([key, list]) => {
+    const s = computeStats(list);
+    const expectancy = s.total ? s.netPnl / s.total : 0;
+    return { key, ...s, expectancy };
+  }).sort((a, b) => b.netPnl - a.netPnl);
+
+  const renderTable = (elId, rows, keyLabel) => {
+    document.getElementById(elId).innerHTML = `
+      <thead><tr><th>${keyLabel}</th><th>Trades</th><th>Win%</th><th>Net P&amp;L</th><th>Expectancy</th></tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          <td>${escapeHtml(r.key)}</td>
+          <td style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted);">${r.total}</td>
+          <td style="font-family:var(--font-mono); font-size:11.5px;">${r.winRate.toFixed(0)}%</td>
+          <td class="${r.netPnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtMoney(r.netPnl, { forceSign: true })}</td>
+          <td class="${r.expectancy >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtMoney(r.expectancy, { forceSign: true })}</td>
+        </tr>`).join('')}</tbody>`;
+  };
+
+  renderTable('breakdownSessionTable', rowsFor(groupBy(t => t.session)), 'Session');
+  renderTable('breakdownModelTable', rowsFor(groupBy(t => t.model)), 'Model');
+
+  const ruleGroups = groupBy(t => t.ruleFollowed ? 'Rule followed' : 'Rule broken');
+  renderTable('breakdownRuleTable', rowsFor(ruleGroups), 'Discipline');
+
+  const dowNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dowGroups = groupBy(t => dowNames[new Date(t.date + 'T00:00:00').getDay()]);
+  const dowOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const dowData = dowOrder.map(d => dowGroups[d] ? dowGroups[d].reduce((s, t) => s + t.pnl, 0) : 0);
+  const ctx = document.getElementById('breakdownDowChart');
+  if (charts.breakdownDow) charts.breakdownDow.destroy();
+  charts.breakdownDow = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: dowOrder, datasets: [{ data: dowData, backgroundColor: dowData.map(v => v >= 0 ? '#3ecf8e' : '#ff5c5c'), borderRadius: 4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtMoney(c.raw) } } },
+      scales: {
+        x: { ticks: { color: '#9aa1a9', font: { size: 10.5, family: 'Inter' } }, grid: { display: false } },
+        y: { ticks: { color: '#5c636b', font: { size: 9, family: 'IBM Plex Mono' }, callback: v => fmtMoneyShort(v) }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+
+  const sorted = trades.slice().sort((a, b) => a.pnl - b.pnl);
+  const worst = sorted[0], best = sorted[sorted.length - 1];
+  document.getElementById('bdBestTrade').textContent = best ? fmtMoney(best.pnl, { forceSign: true }) + ' · ' + fmtDateShort(best.date) : '—';
+  document.getElementById('bdWorstTrade').textContent = worst ? fmtMoney(worst.pnl, { forceSign: true }) + ' · ' + fmtDateShort(worst.date) : '—';
+
+  const mistakeCounts = {};
+  trades.forEach(t => (t.mistakeTags || []).forEach(m => mistakeCounts[m] = (mistakeCounts[m] || 0) + 1));
+  const topMistake = Object.entries(mistakeCounts).sort((a, b) => b[1] - a[1])[0];
+  document.getElementById('bdTopMistake').textContent = topMistake ? `${topMistake[0]} (${topMistake[1]}×)` : 'None logged';
+}
+
+/* ---------------- Certificates page ---------------- */
+function renderCertificates() {
+  const grid = document.getElementById('certificatesGrid');
+  if (!state.certificates.length) {
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="empty-state-icon">✓</div><div class="empty-state-title">No documents yet</div><div class="empty-state-sub">Upload XFA certificates, payout confirmations, or account docs.</div></div>`;
+    return;
+  }
+  grid.innerHTML = state.certificates.slice().reverse().map(c => `
+    <div class="account-card">
+      ${c.isImage ? `<img src="${c.fileData}" style="width:100%; border-radius:8px; margin-bottom:10px; border:1px solid var(--border);">` : `<div style="height:100px; display:flex; align-items:center; justify-content:center; background:var(--bg-elevated-2); border-radius:8px; margin-bottom:10px; font-size:28px; color:var(--text-muted);">📄</div>`}
+      <div class="account-name" style="font-size:13px;">${escapeHtml(c.name)}</div>
+      <div class="account-firm">${fmtDateShort(c.date)}</div>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <a href="${c.fileData}" download="${escapeHtml(c.name)}" class="btn btn-sm btn-ghost">Download</a>
+        <button class="btn btn-sm btn-danger" onclick="deleteCertificate('${c.id}')">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+document.getElementById('certFileInput').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    state.certificates.push({ id: uid(), name: file.name, date: todayISO(), fileData: ev.target.result, isImage: file.type.startsWith('image/') });
+    saveCertificates();
+    renderCertificates();
+    showToast('Document uploaded');
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+});
+
+function deleteCertificate(id) {
+  if (!confirm('Delete this document?')) return;
+  state.certificates = state.certificates.filter(c => c.id !== id);
+  saveCertificates();
+  renderCertificates();
+}
+
+/* ---------------- Expenses page ---------------- */
+function renderExpenses() {
+  const total = state.expenses.reduce((s, e) => s + e.amount, 0);
+  const monthStr = todayISO().slice(0, 7);
+  const monthTotal = state.expenses.filter(e => e.date.startsWith(monthStr)).reduce((s, e) => s + e.amount, 0);
+  const tradingNet = state.trades.reduce((s, t) => s + t.pnl, 0);
+  const totalEl = document.getElementById('expTotalAll');
+  totalEl.textContent = fmtMoney(total);
+  totalEl.className = 'stat-value' + (total > 0 ? ' negative' : '');
+  const monthEl = document.getElementById('expTotalMonth');
+  monthEl.textContent = fmtMoney(monthTotal);
+  monthEl.className = 'stat-value' + (monthTotal > 0 ? ' negative' : '');
+  const netVal = tradingNet - total;
+  const netEl = document.getElementById('expNetOfTrading');
+  netEl.textContent = fmtMoney(netVal, { forceSign: true });
+  netEl.className = 'stat-value ' + (netVal >= 0 ? 'positive' : 'negative');
+
+  const body = document.getElementById('expensesTableBody');
+  const sorted = state.expenses.slice().sort((a, b) => b.date.localeCompare(a.date));
+  if (!sorted.length) { body.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:20px;">No expenses logged</td></tr>`; return; }
+  body.innerHTML = sorted.map(e => `
+    <tr>
+      <td style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted);">${fmtDateShort(e.date)}</td>
+      <td><span class="badge">${escapeHtml(e.category)}</span></td>
+      <td style="font-size:12.5px; color:var(--text-secondary);">${escapeHtml(e.note || '—')}</td>
+      <td class="pnl-neg">${fmtMoney(e.amount)}</td>
+      <td><button class="icon-btn" onclick="deleteExpense('${e.id}')" title="Delete">🗑</button></td>
+    </tr>`).join('');
+}
+
+document.getElementById('addExpenseBtn').addEventListener('click', () => {
+  document.getElementById('expenseForm').reset();
+  document.getElementById('expenseDate').value = todayISO();
+  openModal('expenseModalOverlay');
+});
+
+document.getElementById('expenseForm').addEventListener('submit', e => {
+  e.preventDefault();
+  state.expenses.push({
+    id: uid(),
+    date: document.getElementById('expenseDate').value,
+    category: document.getElementById('expenseCategory').value,
+    amount: parseFloat(document.getElementById('expenseAmount').value) || 0,
+    note: document.getElementById('expenseNote').value.trim()
+  });
+  saveExpenses();
+  closeModal('expenseModalOverlay');
+  renderExpenses();
+  showToast('Expense added');
+});
+
+function deleteExpense(id) {
+  if (!confirm('Delete this expense?')) return;
+  state.expenses = state.expenses.filter(e => e.id !== id);
+  saveExpenses();
+  renderExpenses();
+}
+
 /* ---------------- Review page ---------------- */
 function renderReview() {
   const start = state.reviewWeekStart;
@@ -1005,9 +1321,14 @@ function renderAll() {
   renderAccountsPage();
   renderJournal();
   renderReview();
+  renderPlaybook();
+  renderBreakdown();
+  renderCertificates();
+  renderExpenses();
 }
 
 loadState();
 initNav();
+initMobileDrawer();
 renderAccountSwitcher();
 renderAll();

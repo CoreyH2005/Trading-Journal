@@ -10,8 +10,15 @@
 </head>
 <body>
 
+<!-- ============ MOBILE TOPBAR ============ -->
+<div class="mobile-topbar">
+  <div class="brand-mark"><span class="dot"></span>EDGE</div>
+  <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Open menu">☰</button>
+</div>
+<div class="sidebar-scrim" id="sidebarScrim"></div>
+
 <!-- ============ SIDEBAR ============ -->
-<aside class="sidebar">
+<aside class="sidebar" id="sidebar">
   <div class="sidebar-brand">
     <div class="brand-mark"><span class="dot"></span>EDGE</div>
     <div class="brand-sub">Trade journal — funded accounts</div>
@@ -71,6 +78,8 @@
         <button class="btn btn-primary" id="dashLogTradeBtn">+ Log trade</button>
       </div>
     </div>
+
+    <div id="dailyLimitAlert" class="hidden"></div>
 
     <div class="stat-grid" id="statGrid"></div>
 
@@ -231,40 +240,93 @@
     </div>
   </section>
 
-  <!-- ===== STUB PAGES ===== -->
+  <!-- ===== PLAYBOOK ===== -->
   <section class="page" id="page-playbook">
-    <div class="page-header"><div><div class="page-title">Playbook</div><div class="page-sub">Your documented setups &amp; rules</div></div></div>
-    <div class="stub-page">
-      <div class="stub-icon">◆</div>
-      <div class="stub-title">Playbook — coming next</div>
-      <div class="stub-desc">This is where your iFVG model rules, entry checklists, and A+ setup criteria will live so every trade in the Journal can be graded against a documented plan. Flag it for next session and we'll build it out.</div>
+    <div class="page-header">
+      <div><div class="page-title">Playbook</div><div class="page-sub">Your documented setups &amp; rules — grade every trade against this, not memory</div></div>
     </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-title">Trading plan</div>
+      <div class="card-sub">Non-negotiables. Read before every session.</div>
+      <textarea id="playbookRules" style="width:100%; min-height:140px; background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px; font-family:var(--font-ui); resize:vertical;"></textarea>
+      <button class="btn btn-primary btn-sm" id="savePlaybookRulesBtn" style="margin-top:10px;">Save plan</button>
+    </div>
+
+    <div class="page-header" style="margin-bottom:14px;">
+      <div><div class="card-title" style="margin:0;">Setups</div><div class="card-sub" style="margin:2px 0 0;">Your A+ models — entry criteria and invalidation</div></div>
+      <button class="btn btn-primary btn-sm" id="addSetupBtn">+ Add setup</button>
+    </div>
+    <div id="setupsList" style="display:flex; flex-direction:column; gap:12px;"></div>
   </section>
 
   <section class="page" id="page-breakdown">
-    <div class="page-header"><div><div class="page-title">Breakdown</div><div class="page-sub">Performance sliced by session, model, and instrument</div></div></div>
-    <div class="stub-page">
-      <div class="stub-icon">◫</div>
-      <div class="stub-title">Breakdown — coming next</div>
-      <div class="stub-desc">Deeper cuts of your Journal data: win rate by session, expectancy by model tag, performance by day-of-week and time-of-day. Once you've logged enough trades this becomes genuinely useful — flag it for next session.</div>
+    <div class="page-header"><div><div class="page-title">Breakdown</div><div class="page-sub">Performance sliced by session, model, and day</div></div></div>
+    <div id="breakdownEmpty" class="empty-state hidden">
+      <div class="empty-state-icon">◫</div>
+      <div class="empty-state-title">Not enough data yet</div>
+      <div class="empty-state-sub">Log a few more trades and this breaks down win rate, expectancy, and R by session, model, and day of week.</div>
+    </div>
+    <div id="breakdownContent">
+      <div class="dash-row">
+        <div class="card">
+          <div class="card-title">By session</div>
+          <div class="card-sub">Win rate, net P&amp;L, and expectancy per session</div>
+          <table class="mini-table" id="breakdownSessionTable"></table>
+        </div>
+        <div class="card">
+          <div class="card-title">By model / setup</div>
+          <div class="card-sub">Win rate, net P&amp;L, and expectancy per model tag</div>
+          <table class="mini-table" id="breakdownModelTable"></table>
+        </div>
+      </div>
+      <div class="dash-row">
+        <div class="card">
+          <div class="card-title">By day of week</div>
+          <div class="card-sub">Net P&amp;L totals</div>
+          <div class="chart-box" style="height:200px;"><canvas id="breakdownDowChart"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="card-title">Rule-followed vs rule-broken</div>
+          <div class="card-sub">Does discipline actually pay?</div>
+          <table class="mini-table" id="breakdownRuleTable"></table>
+        </div>
+      </div>
+      <div class="dash-row-3">
+        <div class="stat-card"><div class="stat-label">Best trade</div><div class="stat-value positive" id="bdBestTrade">—</div></div>
+        <div class="stat-card"><div class="stat-label">Worst trade</div><div class="stat-value negative" id="bdWorstTrade">—</div></div>
+        <div class="stat-card"><div class="stat-label">Most-used mistake tag</div><div class="stat-value" id="bdTopMistake" style="font-size:15px;">—</div></div>
+      </div>
     </div>
   </section>
 
   <section class="page" id="page-certificates">
-    <div class="page-header"><div><div class="page-title">Certificates</div><div class="page-sub">Funded account documents &amp; payout proof</div></div></div>
-    <div class="stub-page">
-      <div class="stub-icon">✓</div>
-      <div class="stub-title">Certificates — coming next</div>
-      <div class="stub-desc">A place to store XFA certificates, payout confirmations, and account docs per funded account. Flag it for next session and we'll wire up file storage.</div>
+    <div class="page-header">
+      <div><div class="page-title">Certificates</div><div class="page-sub">XFA certificates, payout confirmations, account docs</div></div>
+      <div class="page-actions">
+        <label class="btn btn-primary btn-sm" for="certFileInput" style="cursor:pointer;">+ Upload document</label>
+        <input type="file" id="certFileInput" accept="image/*,.pdf" style="display:none;">
+      </div>
     </div>
+    <div id="certificatesGrid" class="accounts-grid"></div>
   </section>
 
   <section class="page" id="page-expenses">
-    <div class="page-header"><div><div class="page-title">Expenses</div><div class="page-sub">Cost of doing business</div></div></div>
-    <div class="stub-page">
-      <div class="stub-icon">$</div>
-      <div class="stub-title">Expenses — coming next</div>
-      <div class="stub-desc">Track evaluation fees, platform/data costs, and resets against your net payouts to see true take-home. Flag it for next session.</div>
+    <div class="page-header">
+      <div><div class="page-title">Expenses</div><div class="page-sub">Cost of doing business, set against what trading actually nets you</div></div>
+      <div class="page-actions"><button class="btn btn-primary btn-sm" id="addExpenseBtn">+ Add expense</button></div>
+    </div>
+    <div class="dash-row-3">
+      <div class="stat-card"><div class="stat-label">Total expenses</div><div class="stat-value negative" id="expTotalAll">—</div></div>
+      <div class="stat-card"><div class="stat-label">This month</div><div class="stat-value negative" id="expTotalMonth">—</div></div>
+      <div class="stat-card"><div class="stat-label">Trading net P&amp;L minus expenses</div><div class="stat-value" id="expNetOfTrading">—</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">All expenses</div>
+      <table class="mini-table" id="expensesTable">
+        <thead><tr><th>Date</th><th>Category</th><th>Note</th><th>Amount</th><th></th></tr></thead>
+        <tbody id="expensesTableBody"></tbody>
+      </table>
     </div>
   </section>
 
@@ -469,6 +531,96 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" data-close-modal="accountModalOverlay">Cancel</button>
         <button type="submit" class="btn btn-primary">Save account</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MODAL: ADD/EDIT SETUP ============ -->
+<div class="modal-overlay" id="setupModalOverlay">
+  <div class="modal" style="max-width:560px;">
+    <div class="modal-header">
+      <div class="modal-title" id="setupModalTitle">Add setup</div>
+      <button class="icon-btn" data-close-modal="setupModalOverlay">✕</button>
+    </div>
+    <form id="setupForm">
+      <input type="hidden" id="setupId">
+      <div class="form-grid">
+        <div class="form-field full">
+          <label>Setup name</label>
+          <input type="text" id="setupName" placeholder="e.g. NY AM iFVG continuation" required>
+        </div>
+        <div class="form-field">
+          <label>Session</label>
+          <select id="setupSession">
+            <option value="ASIA">Asia</option>
+            <option value="LONDON">London</option>
+            <option value="NY AM" selected>NY AM</option>
+            <option value="NY PM">NY PM</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Model tag</label>
+          <select id="setupModel">
+            <option value="iFVG">iFVG</option>
+            <option value="FVG">FVG</option>
+            <option value="Order Block">Order Block</option>
+            <option value="Liquidity Sweep">Liquidity Sweep</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="form-field full">
+          <label>Entry criteria</label>
+          <textarea id="setupEntry" placeholder="What has to be true before you take this?"></textarea>
+        </div>
+        <div class="form-field full">
+          <label>Invalidation</label>
+          <textarea id="setupInvalid" placeholder="What kills the setup before entry?"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="setupModalOverlay">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save setup</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============ MODAL: ADD EXPENSE ============ -->
+<div class="modal-overlay" id="expenseModalOverlay">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div class="modal-title">Add expense</div>
+      <button class="icon-btn" data-close-modal="expenseModalOverlay">✕</button>
+    </div>
+    <form id="expenseForm">
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Date</label>
+          <input type="date" id="expenseDate" required>
+        </div>
+        <div class="form-field">
+          <label>Category</label>
+          <select id="expenseCategory">
+            <option>Evaluation fee</option>
+            <option>Reset fee</option>
+            <option>Platform / data</option>
+            <option>Software</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="form-field full">
+          <label>Amount ($)</label>
+          <input type="number" id="expenseAmount" step="0.01" required>
+        </div>
+        <div class="form-field full">
+          <label>Note (optional)</label>
+          <input type="text" id="expenseNote" placeholder="e.g. Topstep 25K reset">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="expenseModalOverlay">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save expense</button>
       </div>
     </form>
   </div>

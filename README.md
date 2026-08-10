@@ -2,7 +2,7 @@
 
 A dark-theme trading journal for funded futures accounts. Multi-account ready, built around NQ/ICT-style trading (session, model/setup tags, R-multiples), with plan-adherence tracking and a weekly review workflow.
 
-Live structure: **Dashboard · Accounts · Journal · Review** (fully built), plus **Playbook / Breakdown / Certificates / Expenses** stubbed in as placeholders for a future session, and **Import / Backup** for CSV import + JSON backup/restore.
+Live structure — everything below is fully built: **Dashboard · Accounts · Journal · Review · Playbook · Breakdown · Certificates · Expenses · Import/Backup**. Responsive down to mobile with a proper collapsible sidebar drawer.
 
 ## How it works
 
@@ -43,6 +43,30 @@ A composite 0–100 score across six axes (win %, profit factor, avg win/loss ra
 
 Import / Backup → Import CSV. It auto-detects likely column matches (date, symbol, direction, P&L) but always shows a mapping table so you confirm before importing — broker/prop-firm export formats vary too much to guess blind.
 
-## What's stubbed for next session
+## Playbook
 
-Playbook, Breakdown, Certificates, and Expenses are placeholder pages with a description of what they'll do. Flag which one you want built next.
+A trading plan (freeform rules text, save on demand) plus a list of documented setups — name, session, model tag, entry criteria, and invalidation. Seeded with a starting NY AM iFVG continuation and Asia sweep reversal setup based on how you actually trade; edit or replace freely. The idea is every trade in the Journal should trace back to one of these, not memory.
+
+## Breakdown
+
+Real analytics computed live from your Journal data (needs 3+ trades to populate):
+- Win rate, net P&L, and expectancy per session and per model tag
+- Net P&L by day of week
+- Rule-followed vs rule-broken performance — does discipline actually pay for you
+- Best/worst trade and your most-used mistake tag
+
+## Certificates
+
+Simple document storage — upload XFA certs, payout confirmations, account docs (images or PDFs) as base64 in localStorage. Download or delete per document.
+
+## Expenses
+
+Log evaluation fees, resets, platform/data costs. Shows total, this month, and trading net P&L minus expenses so you can see true take-home.
+
+## Daily loss limit alert
+
+If an account has a daily loss limit set (edit the account to add one) and you're down on the current day, a warning strip appears at the top of the Dashboard showing how much of that limit you've used — turns red past 70%. Only shows when a single account is selected, not "All accounts".
+
+## Mobile
+
+Below 900px the sidebar becomes a slide-out drawer (hamburger button top-left) instead of squeezing the layout. All grids collapse to single-column.
