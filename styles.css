@@ -918,6 +918,28 @@ button, input, select, textarea {
 .detail-stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
 .detail-stat-value { font-family: var(--font-mono); font-weight: 600; font-size: 14px; }
 
+.detail-notes-section {
+  margin-top: 18px;
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 16px 18px;
+}
+.detail-notes-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+.detail-notes-body {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* ============================================
    ACCOUNTS PAGE
    ============================================ */

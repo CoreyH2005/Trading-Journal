@@ -905,7 +905,10 @@ function viewTradeDetail(id) {
       <div class="detail-stat"><div class="detail-stat-label">Timeframe</div><div class="detail-stat-value" style="font-size:12px;">${t.timeframe ? escapeHtml(t.timeframe) : '—'}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Premium / discount</div><div class="detail-stat-value" style="font-size:12px;">${t.premiumDiscount ? escapeHtml(t.premiumDiscount) : '—'}</div></div>
     </div>
-    <div style="font-size:13px; color:var(--text-secondary); line-height:1.6;">${escapeHtml(t.note || 'No notes added.')}</div>
+    <div class="detail-notes-section">
+      <div class="detail-notes-label">Notes / reasoning</div>
+      <div class="detail-notes-body">${t.note ? escapeHtml(t.note) : '<span style="color:var(--text-muted);">No notes added.</span>'}</div>
+    </div>
   `;
   document.getElementById('detailDeleteBtn').onclick = () => { deleteTrade(id); closeModal('detailModalOverlay'); };
   document.getElementById('detailEditBtn').onclick = () => { closeModal('detailModalOverlay'); editTrade(id); };
