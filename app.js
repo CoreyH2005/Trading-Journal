@@ -123,7 +123,19 @@ function loadState() {
   }
 }
 function saveAccounts() { localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(state.accounts)); }
-function saveTrades() { localStorage.setItem(STORAGE_KEYS.trades, JSON.stringify(state.trades)); }
+function saveTrades() {
+  try {
+    localStorage.setItem(STORAGE_KEYS.trades, JSON.stringify(state.trades));
+    return true;
+  } catch (err) {
+    if (err && (err.name === 'QuotaExceededError' || /quota/i.test(err.message || ''))) {
+      alert('Storage is full — this browser caps saved data at about 5MB, and chart screenshots use most of it.\n\nUse the "Clean up storage" button on the Accounts page to remove duplicated screenshots from copied trades, then try again. Your leader trades and their screenshots are kept.');
+    } else {
+      alert('Could not save: ' + (err && err.message ? err.message : err));
+    }
+    return false;
+  }
+}
 function saveReviews() { localStorage.setItem(STORAGE_KEYS.reviews, JSON.stringify(state.reviews)); }
 function savePlaybook() { localStorage.setItem(STORAGE_KEYS.playbook, JSON.stringify(state.playbook)); }
 function saveCertificates() { localStorage.setItem(STORAGE_KEYS.certificates, JSON.stringify(state.certificates)); }
@@ -726,6 +738,8 @@ function syncLeaderTrades() {
       copy.accountId = a.id;
       copy.copiedFromLeader = true;
       copy.batchId = lt.batchId;
+      copy.screenshots = [];   // screenshots live only on the leader trade; don't duplicate the image data
+      copy.screenshot = null;
       state.trades.push(copy);
       created++;
     });
@@ -750,6 +764,33 @@ document.getElementById('syncLeaderBtn').addEventListener('click', () => {
 
 document.getElementById('accountLeaderToggle').addEventListener('click', function () {
   this.classList.toggle('on');
+});
+
+/* One-time cleanup: strip screenshots from copied (mirror) trades. The original
+   screenshot stays on the leader trade; copies only need the P&L data. This
+   reclaims the localStorage space that duplicated base64 images were eating. */
+document.getElementById('cleanupStorageBtn').addEventListener('click', () => {
+  const before = (localStorage.getItem(STORAGE_KEYS.trades) || '').length;
+  let cleaned = 0;
+  state.trades.forEach(t => {
+    if (t.copiedFromLeader && ((t.screenshots && t.screenshots.length) || t.screenshot)) {
+      t.screenshots = [];
+      t.screenshot = null;
+      cleaned++;
+    }
+  });
+  if (cleaned === 0) {
+    showToast('Nothing to clean — no duplicated screenshots found');
+    return;
+  }
+  // saveTrades is now wrapped; it returns true on success.
+  const ok = saveTrades();
+  if (ok) {
+    const after = (JSON.stringify(state.trades)).length;
+    const freedKb = Math.max(0, Math.round((before - after) / 1024));
+    renderAccountsPage(); renderDashboard(); renderJournal();
+    showToast(`Cleaned ${cleaned} copied trade${cleaned > 1 ? 's' : ''} — freed ~${freedKb} KB`);
+  }
 });
 
 document.getElementById('accountForm').addEventListener('submit', e => {
@@ -1188,6 +1229,8 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
         copy.id = uid();
         copy.accountId = a.id;
         copy.copiedFromLeader = true;
+        copy.screenshots = [];   // screenshots live only on the leader trade; don't duplicate the image data
+        copy.screenshot = null;
         state.trades.push(copy);
         copiedCount++;
       });
