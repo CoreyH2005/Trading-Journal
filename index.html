@@ -446,6 +446,14 @@
           <input type="number" id="tradePnl" step="0.01" required placeholder="e.g. 450 or -220">
         </div>
         <div class="form-field">
+          <label>Outcome</label>
+          <div class="chip-select" id="outcomeChips">
+            <div class="chip outcome-chip outcome-win" data-outcome="win">Win</div>
+            <div class="chip outcome-chip outcome-loss" data-outcome="loss">Loss</div>
+            <div class="chip outcome-chip outcome-be" data-outcome="be">BE</div>
+          </div>
+        </div>
+        <div class="form-field">
           <label>R multiple</label>
           <input type="number" id="tradeR" step="0.1" placeholder="e.g. 2.3">
         </div>

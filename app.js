@@ -41,6 +41,8 @@ let state = {
   currentDetailImages: [],
   selectedMistakeTags: [],
   ruleFollowed: true,
+  tradeOutcome: 'win',
+  outcomeManuallySet: false,
   csvRows: null,
   csvHeaders: null
 };
@@ -170,21 +172,28 @@ function getTrades(accountId = state.currentAccountId) {
 }
 function getAccount(id) { return state.accounts.find(a => a.id === id); }
 
+function getOutcome(t) {
+  if (t.outcome === 'win' || t.outcome === 'loss' || t.outcome === 'be') return t.outcome;
+  return t.pnl > 0 ? 'win' : (t.pnl < 0 ? 'loss' : 'be');
+}
+
 function computeStats(trades) {
   const total = trades.length;
-  const wins = trades.filter(t => t.pnl > 0);
-  const losses = trades.filter(t => t.pnl < 0);
+  const wins = trades.filter(t => getOutcome(t) === 'win');
+  const losses = trades.filter(t => getOutcome(t) === 'loss');
+  const bes = trades.filter(t => getOutcome(t) === 'be');
   const netPnl = trades.reduce((s, t) => s + t.pnl, 0);
-  const grossWin = wins.reduce((s, t) => s + t.pnl, 0);
-  const grossLoss = Math.abs(losses.reduce((s, t) => s + t.pnl, 0));
-  const winRate = total ? (wins.length / total) * 100 : 0;
+  const grossWin = trades.filter(t => t.pnl > 0).reduce((s, t) => s + t.pnl, 0);
+  const grossLoss = Math.abs(trades.filter(t => t.pnl < 0).reduce((s, t) => s + t.pnl, 0));
+  const decisiveCount = wins.length + losses.length;
+  const winRate = decisiveCount ? (wins.length / decisiveCount) * 100 : 0;
   const profitFactor = grossLoss ? grossWin / grossLoss : (grossWin > 0 ? 99 : 0);
   const avgWin = wins.length ? grossWin / wins.length : 0;
   const avgLoss = losses.length ? grossLoss / losses.length : 0;
   const avgHold = total ? trades.reduce((s, t) => s + (t.holdMinutes || 0), 0) / total : 0;
   const ruleFollowedCount = trades.filter(t => t.ruleFollowed).length;
   const adherence = total ? (ruleFollowedCount / total) * 100 : 0;
-  return { total, wins: wins.length, losses: losses.length, netPnl, grossWin, grossLoss, winRate, profitFactor, avgWin, avgLoss, avgHold, adherence };
+  return { total, wins: wins.length, losses: losses.length, bes: bes.length, netPnl, grossWin, grossLoss, winRate, profitFactor, avgWin, avgLoss, avgHold, adherence };
 }
 
 function computeEquitySeries(trades, startingBalance) {
@@ -341,7 +350,7 @@ function renderDashboard() {
 function renderStatGrid(stats) {
   const cards = [
     { label: 'Net P&L', value: fmtMoney(stats.netPnl, { forceSign: true }), cls: stats.netPnl >= 0 ? 'positive' : 'negative' },
-    { label: 'Win %', value: stats.winRate.toFixed(1) + '%', cls: stats.winRate >= 50 ? 'positive' : 'negative' },
+    { label: 'Win %', value: stats.winRate.toFixed(1) + '%', cls: stats.winRate >= 50 ? 'positive' : 'negative', sub: `W/L only${stats.bes ? ' · ' + stats.bes + ' BE excluded' : ''}` },
     { label: 'Profit factor', value: stats.profitFactor.toFixed(2), cls: stats.profitFactor >= 1.5 ? 'positive' : (stats.profitFactor < 1 ? 'negative' : '') },
     { label: 'Avg win / loss', value: stats.avgLoss ? (stats.avgWin / stats.avgLoss).toFixed(2) : '—', cls: '' },
     { label: 'Avg holding trade', value: stats.avgHold ? Math.round(stats.avgHold) + ' min' : '—', cls: '' }
@@ -350,6 +359,7 @@ function renderStatGrid(stats) {
     <div class="stat-card">
       <div class="stat-label">${c.label}</div>
       <div class="stat-value ${c.cls}">${c.value}</div>
+      ${c.sub ? `<div class="stat-delta">${c.sub}</div>` : ''}
     </div>`).join('');
 }
 
@@ -692,9 +702,9 @@ function renderJournal() {
   const rangeF = document.getElementById('filterDateRange').value;
 
   let trades = getTrades().slice().reverse();
-  if (outcomeF === 'win') trades = trades.filter(t => t.pnl > 0);
-  if (outcomeF === 'loss') trades = trades.filter(t => t.pnl < 0);
-  if (outcomeF === 'be') trades = trades.filter(t => t.pnl === 0);
+  if (outcomeF === 'win') trades = trades.filter(t => getOutcome(t) === 'win');
+  if (outcomeF === 'loss') trades = trades.filter(t => getOutcome(t) === 'loss');
+  if (outcomeF === 'be') trades = trades.filter(t => getOutcome(t) === 'be');
   if (sessionF) trades = trades.filter(t => t.session === sessionF);
   if (modelF) trades = trades.filter(t => t.model === modelF);
   if (searchF) trades = trades.filter(t => (t.note || '').toLowerCase().includes(searchF));
@@ -719,11 +729,12 @@ function renderJournal() {
   }
 
   list.innerHTML = trades.map(t => {
-    const outcomeCls = t.pnl > 0 ? 'win' : (t.pnl < 0 ? 'loss' : 'be');
+    const outcomeCls = getOutcome(t);
     return `
     <div class="trade-entry ${outcomeCls}">
       <div class="trade-entry-pnl-col">
         <div class="trade-entry-pnl ${t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtMoney(t.pnl, { forceSign: true })}</div>
+        <div class="outcome-pill ${outcomeCls}">${outcomeCls === 'be' ? 'BE' : outcomeCls}</div>
         <div class="trade-entry-date">${fmtDateShort(t.date)}${t.entryTime ? ' · ' + t.entryTime : ''}</div>
         ${t.rMultiple ? `<div class="trade-entry-date">${t.rMultiple}R</div>` : ''}
       </div>
@@ -773,6 +784,7 @@ function viewTradeDetail(id) {
     ${images.length ? `<div class="detail-gallery">${images.map((src, i) => `<img src="${src}" onclick="openLightboxFrom(state.currentDetailImages, ${i})">`).join('')}</div>` : ''}
     <div class="detail-grid">
       <div class="detail-stat"><div class="detail-stat-label">Net P&L</div><div class="detail-stat-value" style="color:${t.pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtMoney(t.pnl, { forceSign: true })}</div></div>
+      <div class="detail-stat"><div class="detail-stat-label">Outcome</div><div class="detail-stat-value"><span class="outcome-pill ${getOutcome(t)}">${getOutcome(t) === 'be' ? 'BE' : getOutcome(t)}</span></div></div>
       <div class="detail-stat"><div class="detail-stat-label">R Multiple</div><div class="detail-stat-value">${t.rMultiple || '—'}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Hold time</div><div class="detail-stat-value">${t.holdMinutes ? t.holdMinutes + ' min' : '—'}</div></div>
       <div class="detail-stat"><div class="detail-stat-label">Entered at</div><div class="detail-stat-value" style="font-size:14px;">${t.entryTime || '—'}</div></div>
@@ -853,6 +865,8 @@ function openLogTradeModal() {
   state.pendingScreenshots = [];
   state.selectedMistakeTags = [];
   state.ruleFollowed = true;
+  state.outcomeManuallySet = false;
+  setOutcome('win');
   document.getElementById('tradeModalTitle').textContent = 'Log trade';
   document.getElementById('tradeForm').reset();
   populateAccountSelect();
@@ -874,6 +888,8 @@ function editTrade(id) {
   state.pendingScreenshots = (t.screenshots && t.screenshots.length) ? t.screenshots.slice() : (t.screenshot ? [t.screenshot] : []);
   state.selectedMistakeTags = (t.mistakeTags || []).slice();
   state.ruleFollowed = t.ruleFollowed;
+  state.outcomeManuallySet = true;
+  setOutcome(getOutcome(t));
 
   document.getElementById('tradeModalTitle').textContent = 'Edit trade';
   populateAccountSelect();
@@ -914,6 +930,23 @@ document.querySelectorAll('#mistakeChips .chip').forEach(chip => {
     if (chip.classList.contains('selected')) state.selectedMistakeTags.push(tag);
     else state.selectedMistakeTags = state.selectedMistakeTags.filter(t => t !== tag);
   });
+});
+
+function setOutcome(outcome) {
+  state.tradeOutcome = outcome;
+  document.querySelectorAll('#outcomeChips .outcome-chip').forEach(c => c.classList.toggle('selected', c.dataset.outcome === outcome));
+}
+document.querySelectorAll('#outcomeChips .outcome-chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    state.outcomeManuallySet = true;
+    setOutcome(chip.dataset.outcome);
+  });
+});
+document.getElementById('tradePnl').addEventListener('input', function () {
+  if (state.outcomeManuallySet) return;
+  const v = parseFloat(this.value);
+  if (isNaN(v)) return;
+  setOutcome(v > 0 ? 'win' : (v < 0 ? 'loss' : 'be'));
 });
 
 document.getElementById('tradeFileDrop').addEventListener('click', () => document.getElementById('tradeScreenshot').click());
@@ -957,6 +990,7 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
     setupName: setupName,
     contracts: parseFloat(document.getElementById('tradeContracts').value) || 0,
     pnl: parseFloat(document.getElementById('tradePnl').value) || 0,
+    outcome: state.tradeOutcome,
     rMultiple: document.getElementById('tradeR').value ? parseFloat(document.getElementById('tradeR').value) : null,
     holdMinutes: document.getElementById('tradeHold').value ? parseFloat(document.getElementById('tradeHold').value) : null,
     timeframe: document.getElementById('tradeTimeframe').value.trim(),

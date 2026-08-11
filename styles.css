@@ -769,6 +769,26 @@ button, input, select, textarea {
 }
 .chip.selected.tag-red { background: var(--red-soft); border-color: var(--red); color: var(--red); }
 
+.outcome-chip { font-weight: 600; }
+.outcome-chip.outcome-win.selected { background: var(--green-soft); border-color: var(--green); color: var(--green); }
+.outcome-chip.outcome-loss.selected { background: var(--red-soft); border-color: var(--red); color: var(--red); }
+.outcome-chip.outcome-be.selected { background: var(--gold-soft); border-color: var(--gold); color: var(--gold); }
+
+.outcome-pill {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  font-family: var(--font-mono);
+  margin-top: 3px;
+}
+.outcome-pill.win { background: var(--green); color: #06120c; }
+.outcome-pill.loss { background: var(--red); color: #2b0a0a; }
+.outcome-pill.be { background: var(--gold); color: #2b220a; }
+
 .toggle-row {
   display: flex; align-items: center; justify-content: space-between;
   background: var(--bg-elevated-2);
