@@ -616,18 +616,24 @@ function renderAccountsPage() {
     const trades = state.trades.filter(t => t.accountId === a.id);
     const netPnl = trades.reduce((s, t) => s + t.pnl, 0);
     const balance = a.startingBalance + netPnl;
-    const equitySeries = computeEquitySeries(trades.sort((x, y) => x.date.localeCompare(y.date)), a.startingBalance);
-    const dd = computeDrawdownSeries(equitySeries);
-    const maxDD = Math.abs(Math.min(...dd.map(d => d.drawdown), 0));
     const targetPct = a.target ? Math.min(100, Math.max(0, (netPnl / a.target) * 100)) : 0;
-    const ddPct = a.maxDrawdown ? Math.min(100, (maxDD / a.maxDrawdown) * 100) : 0;
+
+    // Static drawdown: a fixed floor at (startingBalance - maxDrawdown) that never moves.
+    // "Buffer" = how far the current balance sits above that floor. If balance falls to the
+    // floor, the account is blown. maxDrawdown is the total DD size (e.g. 1000 on a 25K).
+    const floor = a.startingBalance - a.maxDrawdown;
+    const buffer = balance - floor;              // dollars of room left before blowing
+    const ddUsed = a.maxDrawdown - buffer;       // how much of the DD allowance is eaten
+    const ddUsedClamped = Math.max(0, ddUsed);   // don't show negative when in profit
+    const ddPct = a.maxDrawdown ? Math.min(100, Math.max(0, (ddUsedClamped / a.maxDrawdown) * 100)) : 0;
+    const bufferLow = buffer <= a.maxDrawdown * 0.25; // warn when down to last 25% of room
 
     const byDay = {};
     trades.forEach(t => { byDay[t.date] = (byDay[t.date] || 0) + t.pnl; });
     const dayValues = Object.values(byDay);
     const bestDay = dayValues.length ? Math.max(...dayValues) : 0;
     const consistencyPct = netPnl > 0 && bestDay > 0 ? (bestDay / netPnl) * 100 : 0;
-    const consistencyThreshold = a.consistencyPct != null ? a.consistencyPct : 20;
+    const consistencyThreshold = a.consistencyPct != null ? a.consistencyPct : 50;
     const consistencyOver = netPnl > 0 && consistencyPct > consistencyThreshold;
 
     return `
@@ -645,8 +651,8 @@ function renderAccountsPage() {
         <div class="progress-track"><div class="progress-fill" style="width:${Math.max(0,targetPct)}%"></div></div>
       </div>` : ''}
       ${a.maxDrawdown ? `<div class="progress-row">
-        <div class="progress-label"><span>Drawdown used</span><span>${fmtMoney(maxDD)} / ${fmtMoney(a.maxDrawdown)}</span></div>
-        <div class="progress-track"><div class="progress-fill drawdown" style="width:${ddPct}%"></div></div>
+        <div class="progress-label"><span>Drawdown buffer${bufferLow ? ' ⚠' : ''}</span><span style="color:${bufferLow ? 'var(--red)' : 'var(--text-muted)'}">${fmtMoney(Math.max(0, buffer))} left · floor ${fmtMoney(floor)}</span></div>
+        <div class="progress-track"><div class="progress-fill ${bufferLow ? 'drawdown' : ''}" style="width:${ddPct}%"></div></div>
       </div>` : ''}
       ${netPnl > 0 ? `<div class="progress-row">
         <div class="progress-label"><span>Consistency (best day)${consistencyOver ? ' ⚠' : ''}</span><span style="color:${consistencyOver ? 'var(--red)' : 'var(--text-muted)'}">${consistencyPct.toFixed(0)}% / ${consistencyThreshold}%</span></div>
@@ -691,6 +697,55 @@ document.getElementById('addAccountBtn').addEventListener('click', () => {
   document.getElementById('accountStarting').value = 150000;
   document.getElementById('accountLeaderToggle').classList.remove('on');
   openModal('accountModalOverlay');
+});
+
+/* Backfill: copy any leader trades that aren't yet mirrored to every other account.
+   Handles trades logged before an account became leader, and accounts added after
+   a leader trade was logged (batch missing some accounts). */
+function syncLeaderTrades() {
+  const leader = state.accounts.find(a => a.isLeader);
+  if (!leader) { alert('No leader account is set. Edit an account and toggle it as the leader first.'); return; }
+  const others = state.accounts.filter(a => a.id !== leader.id);
+  if (!others.length) { alert('You only have one account — nothing to copy to.'); return; }
+
+  // Every trade that lives on the leader account is a candidate to mirror.
+  const leaderTrades = state.trades.filter(t => t.accountId === leader.id);
+  let created = 0;
+
+  leaderTrades.forEach(lt => {
+    // Ensure this leader trade has a batchId so its copies can be grouped.
+    if (!lt.batchId) lt.batchId = uid();
+    // Which accounts already have a copy in this batch?
+    const covered = new Set(
+      state.trades.filter(t => t.batchId === lt.batchId).map(t => t.accountId)
+    );
+    others.forEach(a => {
+      if (covered.has(a.id)) return; // already mirrored to this account
+      const copy = JSON.parse(JSON.stringify(lt));
+      copy.id = uid();
+      copy.accountId = a.id;
+      copy.copiedFromLeader = true;
+      copy.batchId = lt.batchId;
+      state.trades.push(copy);
+      created++;
+    });
+  });
+
+  saveTrades();
+  renderAccountsPage(); renderDashboard(); renderJournal();
+  if (created === 0) {
+    showToast('Already in sync — nothing to copy');
+  } else {
+    showToast(`Synced — created ${created} copied trade${created > 1 ? 's' : ''}`);
+  }
+}
+document.getElementById('syncLeaderBtn').addEventListener('click', () => {
+  const leader = state.accounts.find(a => a.isLeader);
+  if (!leader) { alert('No leader account is set. Edit an account and toggle it as the leader first.'); return; }
+  const others = state.accounts.filter(a => a.id !== leader.id).length;
+  if (confirm(`Copy every trade on "${leader.name}" across to your other ${others} account${others > 1 ? 's' : ''}?\n\nThis only fills in missing copies — it won't duplicate trades that are already mirrored.`)) {
+    syncLeaderTrades();
+  }
 });
 
 document.getElementById('accountLeaderToggle').addEventListener('click', function () {
