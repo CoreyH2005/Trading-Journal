@@ -414,6 +414,23 @@ button, input, select, textarea {
 .stat-value.positive { color: var(--green); }
 .stat-value.negative { color: var(--red); }
 
+.stat-value-input {
+  font-family: var(--font-mono);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--border);
+  padding: 2px 0 4px;
+  width: 100%;
+  color: var(--text-primary);
+}
+.stat-value-input:focus { outline: none; border-bottom-color: var(--blue); border-bottom-style: solid; }
+.stat-value-input.positive { color: var(--green); }
+.stat-value-input.negative { color: var(--red); }
+.stat-value-input::placeholder { color: var(--text-muted); opacity: 0.5; }
+
 .stat-delta {
   font-size: 11.5px;
   margin-top: 6px;

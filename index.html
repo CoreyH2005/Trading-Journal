@@ -52,7 +52,7 @@
       <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></span> Certificates
     </li>
     <li class="nav-item" data-page="expenses">
-      <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span> Expenses
+      <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></span> Finances
     </li>
     <div class="nav-divider"></div>
     <li class="nav-item" data-page="import">
@@ -154,7 +154,7 @@
     <div class="page-header">
       <div>
         <div class="page-title">Accounts</div>
-        <div class="page-sub">Manage every funded / evaluation account in one place</div>
+        <div class="page-sub">Manage every funded / evaluation account in one place · Consistency % is best-single-day ÷ net profit — a general approximation, confirm the exact threshold against your actual prop firm rules</div>
       </div>
       <div class="page-actions">
         <button class="btn btn-primary" id="addAccountBtn">+ Add account</button>
@@ -208,6 +208,10 @@
         <option value="Other">Other</option>
       </select>
       <input type="text" id="filterSearch" placeholder="Search notes...">
+      <label class="toggle-row" style="padding:7px 10px; gap:8px; cursor:pointer;">
+        <span style="font-size:12px; color:var(--text-secondary); white-space:nowrap;">Group copied trades</span>
+        <div class="toggle-switch on" id="groupCopiesToggle"></div>
+      </label>
     </div>
     <div id="journalList"></div>
   </section>
@@ -323,6 +327,13 @@
           <table class="mini-table" id="breakdownPdTable"></table>
         </div>
       </div>
+      <div class="dash-row" id="breakdownRRow" style="display:none;">
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-title">R-multiple distribution</div>
+          <div class="card-sub">How your outcomes actually spread across R, not just win rate</div>
+          <div class="chart-box" style="height:200px;"><canvas id="breakdownRChart"></canvas></div>
+        </div>
+      </div>
       <div class="dash-row-3">
         <div class="stat-card"><div class="stat-label">Best trade</div><div class="stat-value positive" id="bdBestTrade">—</div></div>
         <div class="stat-card"><div class="stat-label">Worst trade</div><div class="stat-value negative" id="bdWorstTrade">—</div></div>
@@ -344,20 +355,43 @@
 
   <section class="page" id="page-expenses">
     <div class="page-header">
-      <div><div class="page-title">Expenses</div><div class="page-sub">Cost of doing business, set against what trading actually nets you</div></div>
-      <div class="page-actions"><button class="btn btn-primary btn-sm" id="addExpenseBtn">+ Add expense</button></div>
+      <div><div class="page-title">Finances</div><div class="page-sub">What you actually withdraw, set against what it costs to trade</div></div>
+      <div class="page-actions">
+        <button class="btn btn-sm btn-ghost" id="addPayoutBtn">+ Add payout</button>
+        <button class="btn btn-primary btn-sm" id="addExpenseBtn">+ Add expense</button>
+      </div>
     </div>
     <div class="dash-row-3">
-      <div class="stat-card"><div class="stat-label">Total expenses</div><div class="stat-value negative" id="expTotalAll">—</div></div>
-      <div class="stat-card"><div class="stat-label">This month</div><div class="stat-value negative" id="expTotalMonth">—</div></div>
-      <div class="stat-card"><div class="stat-label">Trading net P&amp;L minus expenses</div><div class="stat-value" id="expNetOfTrading">—</div></div>
+      <div class="stat-card">
+        <div class="stat-label">Total payouts received</div>
+        <input type="number" id="manualPayoutTotal" class="stat-value-input positive" step="0.01" placeholder="0.00">
+        <div class="stat-delta" id="payoutItemizedRef"></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total expenses</div>
+        <input type="number" id="manualExpenseTotal" class="stat-value-input negative" step="0.01" placeholder="0.00">
+        <div class="stat-delta" id="expenseItemizedRef"></div>
+      </div>
+      <div class="stat-card"><div class="stat-label">Net take-home (payouts − expenses)</div><div class="stat-value" id="netTakeHome">—</div></div>
     </div>
-    <div class="card">
-      <div class="card-title">All expenses</div>
-      <table class="mini-table" id="expensesTable">
-        <thead><tr><th>Date</th><th>Category</th><th>Note</th><th>Amount</th><th></th></tr></thead>
-        <tbody id="expensesTableBody"></tbody>
-      </table>
+    <div class="card-sub" style="margin:-8px 0 16px 2px;">Payouts and expenses above are set manually by you — the tables below are for keeping an itemized log, they don't auto-drive the totals.</div>
+    <div class="dash-row">
+      <div class="card">
+        <div class="card-title">Payouts</div>
+        <div class="card-sub">Actual cash withdrawn from funded accounts</div>
+        <table class="mini-table" id="payoutsTable">
+          <thead><tr><th>Date</th><th>Account</th><th>Note</th><th>Amount</th><th></th></tr></thead>
+          <tbody id="payoutsTableBody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-title">Expenses</div>
+        <div class="card-sub">Evaluation fees, resets, platform costs</div>
+        <table class="mini-table" id="expensesTable">
+          <thead><tr><th>Date</th><th>Category</th><th>Note</th><th>Amount</th><th></th></tr></thead>
+          <tbody id="expensesTableBody"></tbody>
+        </table>
+      </div>
     </div>
   </section>
 
@@ -587,6 +621,10 @@
           <label>Daily loss limit ($)</label>
           <input type="number" id="accountDailyLimit" value="3000" step="0.01">
         </div>
+        <div class="form-field">
+          <label>Consistency rule (%)</label>
+          <input type="number" id="accountConsistencyPct" value="50" step="1" min="0" max="100">
+        </div>
         <div class="form-field full">
           <div class="toggle-row">
             <span style="font-size:12.5px; color:var(--text-secondary);">Leader account — new trades logged here auto-copy to every other account</span>
@@ -687,6 +725,39 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-ghost" data-close-modal="expenseModalOverlay">Cancel</button>
         <button type="submit" class="btn btn-primary">Save expense</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="modal-overlay" id="payoutModalOverlay">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div class="modal-title">Add payout</div>
+      <button class="icon-btn" data-close-modal="payoutModalOverlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <form id="payoutForm">
+      <div class="form-grid">
+        <div class="form-field">
+          <label>Date</label>
+          <input type="date" id="payoutDate" required>
+        </div>
+        <div class="form-field">
+          <label>Account</label>
+          <select id="payoutAccount"></select>
+        </div>
+        <div class="form-field full">
+          <label>Amount ($)</label>
+          <input type="number" id="payoutAmount" step="0.01" required>
+        </div>
+        <div class="form-field full">
+          <label>Note (optional)</label>
+          <input type="text" id="payoutNote" placeholder="e.g. First payout request">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" data-close-modal="payoutModalOverlay">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save payout</button>
       </div>
     </form>
   </div>

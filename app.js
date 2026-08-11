@@ -20,7 +20,10 @@ const STORAGE_KEYS = {
   seeded: 'edge_seeded_v1',
   playbook: 'edge_playbook_v1',
   certificates: 'edge_certificates_v1',
-  expenses: 'edge_expenses_v1'
+  expenses: 'edge_expenses_v1',
+  payouts: 'edge_payouts_v1',
+  consistencyMigrated: 'edge_consistency_migrated_v1',
+  manualFinance: 'edge_manual_finance_v1'
 };
 
 let state = {
@@ -30,6 +33,8 @@ let state = {
   playbook: { rules: '', setups: [] },
   certificates: [],
   expenses: [],
+  payouts: [],
+  manualFinance: { payoutTotal: null, expenseTotal: null },
   currentAccountId: 'all',
   calendarMonth: new Date().getMonth(),
   calendarYear: new Date().getFullYear(),
@@ -91,9 +96,11 @@ function loadState() {
     state.playbook = JSON.parse(localStorage.getItem(STORAGE_KEYS.playbook)) || { rules: '', setups: [] };
     state.certificates = JSON.parse(localStorage.getItem(STORAGE_KEYS.certificates)) || [];
     state.expenses = JSON.parse(localStorage.getItem(STORAGE_KEYS.expenses)) || [];
+    state.payouts = JSON.parse(localStorage.getItem(STORAGE_KEYS.payouts)) || [];
+    state.manualFinance = JSON.parse(localStorage.getItem(STORAGE_KEYS.manualFinance)) || { payoutTotal: null, expenseTotal: null };
   } catch (e) {
     state.accounts = []; state.trades = []; state.reviews = [];
-    state.playbook = { rules: '', setups: [] }; state.certificates = []; state.expenses = [];
+    state.playbook = { rules: '', setups: [] }; state.certificates = []; state.expenses = []; state.payouts = [];
   }
   if (!localStorage.getItem(STORAGE_KEYS.seeded) && state.accounts.length === 0) {
     seedDemoData();
@@ -106,6 +113,14 @@ function loadState() {
     const guess = state.accounts.find(a => /\(leader\)/i.test(a.name));
     if (guess) { guess.isLeader = true; saveAccounts(); }
   }
+  if (!localStorage.getItem(STORAGE_KEYS.consistencyMigrated)) {
+    let changed = false;
+    state.accounts.forEach(a => {
+      if (a.consistencyPct === 20) { a.consistencyPct = 50; changed = true; }
+    });
+    if (changed) saveAccounts();
+    localStorage.setItem(STORAGE_KEYS.consistencyMigrated, '1');
+  }
 }
 function saveAccounts() { localStorage.setItem(STORAGE_KEYS.accounts, JSON.stringify(state.accounts)); }
 function saveTrades() { localStorage.setItem(STORAGE_KEYS.trades, JSON.stringify(state.trades)); }
@@ -113,6 +128,8 @@ function saveReviews() { localStorage.setItem(STORAGE_KEYS.reviews, JSON.stringi
 function savePlaybook() { localStorage.setItem(STORAGE_KEYS.playbook, JSON.stringify(state.playbook)); }
 function saveCertificates() { localStorage.setItem(STORAGE_KEYS.certificates, JSON.stringify(state.certificates)); }
 function saveExpenses() { localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(state.expenses)); }
+function savePayouts() { localStorage.setItem(STORAGE_KEYS.payouts, JSON.stringify(state.payouts)); }
+function saveManualFinance() { localStorage.setItem(STORAGE_KEYS.manualFinance, JSON.stringify(state.manualFinance)); }
 
 function seedPlaybook() {
   state.playbook = {
@@ -604,6 +621,15 @@ function renderAccountsPage() {
     const maxDD = Math.abs(Math.min(...dd.map(d => d.drawdown), 0));
     const targetPct = a.target ? Math.min(100, Math.max(0, (netPnl / a.target) * 100)) : 0;
     const ddPct = a.maxDrawdown ? Math.min(100, (maxDD / a.maxDrawdown) * 100) : 0;
+
+    const byDay = {};
+    trades.forEach(t => { byDay[t.date] = (byDay[t.date] || 0) + t.pnl; });
+    const dayValues = Object.values(byDay);
+    const bestDay = dayValues.length ? Math.max(...dayValues) : 0;
+    const consistencyPct = netPnl > 0 && bestDay > 0 ? (bestDay / netPnl) * 100 : 0;
+    const consistencyThreshold = a.consistencyPct != null ? a.consistencyPct : 20;
+    const consistencyOver = netPnl > 0 && consistencyPct > consistencyThreshold;
+
     return `
     <div class="account-card">
       <div class="account-card-top">
@@ -621,6 +647,10 @@ function renderAccountsPage() {
       ${a.maxDrawdown ? `<div class="progress-row">
         <div class="progress-label"><span>Drawdown used</span><span>${fmtMoney(maxDD)} / ${fmtMoney(a.maxDrawdown)}</span></div>
         <div class="progress-track"><div class="progress-fill drawdown" style="width:${ddPct}%"></div></div>
+      </div>` : ''}
+      ${netPnl > 0 ? `<div class="progress-row">
+        <div class="progress-label"><span>Consistency (best day)${consistencyOver ? ' ⚠' : ''}</span><span style="color:${consistencyOver ? 'var(--red)' : 'var(--text-muted)'}">${consistencyPct.toFixed(0)}% / ${consistencyThreshold}%</span></div>
+        <div class="progress-track"><div class="progress-fill ${consistencyOver ? 'drawdown' : ''}" style="width:${Math.min(100, consistencyPct)}%"></div></div>
       </div>` : ''}
       <div style="display:flex; gap:8px; margin-top:12px;">
         <button class="btn btn-sm btn-ghost" onclick="editAccount('${a.id}')">Edit</button>
@@ -642,6 +672,7 @@ function editAccount(id) {
   document.getElementById('accountTarget').value = a.target || '';
   document.getElementById('accountMaxDD').value = a.maxDrawdown || '';
   document.getElementById('accountDailyLimit').value = a.dailyLimit || '';
+  document.getElementById('accountConsistencyPct').value = a.consistencyPct != null ? a.consistencyPct : 50;
   document.getElementById('accountLeaderToggle').classList.toggle('on', !!a.isLeader);
   openModal('accountModalOverlay');
 }
@@ -649,7 +680,7 @@ function deleteAccount(id) {
   if (!confirm('Delete this account? Trades logged under it will remain but become unassigned.')) return;
   state.accounts = state.accounts.filter(a => a.id !== id);
   saveAccounts();
-  renderAccountSwitcher(); renderAccountsPage(); renderDashboard();
+  renderAccountSwitcher(); renderAccountsPage(); renderDashboard(); populatePayoutAccountSelect();
 }
 
 document.getElementById('addAccountBtn').addEventListener('click', () => {
@@ -676,6 +707,7 @@ document.getElementById('accountForm').addEventListener('submit', e => {
     target: parseFloat(document.getElementById('accountTarget').value) || 0,
     maxDrawdown: parseFloat(document.getElementById('accountMaxDD').value) || 0,
     dailyLimit: parseFloat(document.getElementById('accountDailyLimit').value) || 0,
+    consistencyPct: parseFloat(document.getElementById('accountConsistencyPct').value) || 50,
     isLeader: document.getElementById('accountLeaderToggle').classList.contains('on')
   };
   if (data.isLeader) {
@@ -690,7 +722,7 @@ document.getElementById('accountForm').addEventListener('submit', e => {
   }
   saveAccounts();
   closeModal('accountModalOverlay');
-  renderAccountSwitcher(); renderAccountsPage(); renderDashboard();
+  renderAccountSwitcher(); renderAccountsPage(); renderDashboard(); populatePayoutAccountSelect();
 });
 
 /* ---------------- Journal page ---------------- */
@@ -700,6 +732,7 @@ function renderJournal() {
   const modelF = document.getElementById('filterModel').value;
   const searchF = document.getElementById('filterSearch').value.toLowerCase();
   const rangeF = document.getElementById('filterDateRange').value;
+  const groupOn = document.getElementById('groupCopiesToggle').classList.contains('on');
 
   let trades = getTrades().slice().reverse();
   if (outcomeF === 'win') trades = trades.filter(t => getOutcome(t) === 'win');
@@ -728,9 +761,75 @@ function renderJournal() {
     return;
   }
 
-  list.innerHTML = trades.map(t => {
-    const outcomeCls = getOutcome(t);
+  if (!groupOn) {
+    list.innerHTML = trades.map(t => tradeCardHtml(t)).join('');
+    return;
+  }
+
+  // Build groups keyed by batchId; trades without a batchId are their own solo group.
+  const groups = [];
+  const seenBatch = {};
+  trades.forEach(t => {
+    if (t.batchId) {
+      if (seenBatch[t.batchId]) { seenBatch[t.batchId].members.push(t); return; }
+      const g = { key: t.batchId, date: t.date, members: [t] };
+      seenBatch[t.batchId] = g;
+      groups.push(g);
+    } else {
+      groups.push({ key: t.id, date: t.date, members: [t] });
+    }
+  });
+
+  list.innerHTML = groups.map(g => {
+    if (g.members.length === 1) return tradeCardHtml(g.members[0]);
+    const leader = g.members.find(m => !m.copiedFromLeader) || g.members[0];
+    const combinedPnl = g.members.reduce((s, m) => s + m.pnl, 0);
+    const outcomeCls = getOutcome(leader);
+    const groupId = 'grp_' + g.key;
     return `
+    <div class="trade-entry ${outcomeCls}">
+      <div class="trade-entry-pnl-col">
+        <div class="trade-entry-pnl ${combinedPnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtMoney(combinedPnl, { forceSign: true })}</div>
+        <div class="outcome-pill ${outcomeCls}">${outcomeCls === 'be' ? 'BE' : outcomeCls}</div>
+        <div class="trade-entry-date">${fmtDateShort(leader.date)}${leader.entryTime ? ' · ' + leader.entryTime : ''}</div>
+        <div class="trade-entry-date" style="color:var(--gold);">${g.members.length} accounts</div>
+      </div>
+      <div>
+        <div class="trade-entry-badges">
+          <span class="badge">${escapeHtml(leader.symbol)}</span>
+          <span class="badge ${leader.direction === 'LONG' ? 'badge-long' : 'badge-short'}">${leader.direction}</span>
+          <span class="badge badge-session">${escapeHtml(leader.session)}</span>
+          <span class="badge badge-model">${escapeHtml(leader.setupName || leader.model)}</span>
+          ${leader.timeframe ? `<span class="badge badge-tf">${escapeHtml(leader.timeframe)}</span>` : ''}
+          ${leader.premiumDiscount ? `<span class="badge badge-pd badge-pd-${leader.premiumDiscount.toLowerCase()}">${escapeHtml(leader.premiumDiscount)}</span>` : ''}
+          ${!leader.ruleFollowed ? `<span class="badge badge-rule-broken">Rule broken</span>` : ''}
+        </div>
+        <div class="trade-entry-note">${escapeHtml(leader.note || 'No notes added.')}</div>
+        <div style="margin-top:8px;">
+          <span class="view-chart-link" onclick="document.getElementById('${groupId}').classList.toggle('hidden')">Show per-account breakdown ↓</span>
+        </div>
+        <div id="${groupId}" class="hidden" style="margin-top:10px; border-top:1px solid var(--border-soft); padding-top:10px;">
+          ${g.members.map(m => {
+            const acc = getAccount(m.accountId);
+            return `<div style="display:flex; justify-content:space-between; padding:5px 0; font-size:12px;">
+              <span style="color:var(--text-secondary);">${acc ? escapeHtml(acc.name) : 'Unknown account'}${!m.copiedFromLeader ? ' <span style=\"color:var(--gold);\">(leader)</span>' : ''}</span>
+              <span class="${m.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-family:var(--font-mono);">${fmtMoney(m.pnl, { forceSign: true })}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+      <div class="trade-entry-actions">
+        <button class="icon-btn" onclick="viewTradeDetail('${leader.id}')" title="View">${ICONS.view}</button>
+        <button class="icon-btn" onclick="editTrade('${leader.id}')" title="Edit">${ICONS.edit}</button>
+        <button class="icon-btn" onclick="deleteTradeGroup('${g.key}')" title="Delete all in group">${ICONS.trash}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function tradeCardHtml(t) {
+  const outcomeCls = getOutcome(t);
+  return `
     <div class="trade-entry ${outcomeCls}">
       <div class="trade-entry-pnl-col">
         <div class="trade-entry-pnl ${t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtMoney(t.pnl, { forceSign: true })}</div>
@@ -759,8 +858,20 @@ function renderJournal() {
         <button class="icon-btn" onclick="deleteTrade('${t.id}')" title="Delete">${ICONS.trash}</button>
       </div>
     </div>`;
-  }).join('');
 }
+
+function deleteTradeGroup(batchId) {
+  const members = state.trades.filter(t => t.batchId === batchId);
+  if (!confirm(`Delete this trade across all ${members.length} accounts?`)) return;
+  state.trades = state.trades.filter(t => t.batchId !== batchId);
+  saveTrades();
+  renderJournal(); renderDashboard();
+}
+
+document.getElementById('groupCopiesToggle').addEventListener('click', function () {
+  this.classList.toggle('on');
+  renderJournal();
+});
 
 ['filterOutcome', 'filterSession', 'filterModel', 'filterSearch', 'filterDateFrom', 'filterDateTo'].forEach(id => {
   document.getElementById(id).addEventListener('input', renderJournal);
@@ -1007,10 +1118,12 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
     Object.assign(t, data);
   } else {
     data.id = uid();
+    const sourceAccount = getAccount(data.accountId);
+    const willCopy = sourceAccount && sourceAccount.isLeader && state.accounts.length > 1;
+    if (willCopy) data.batchId = uid();
     state.trades.push(data);
 
-    const sourceAccount = getAccount(data.accountId);
-    if (sourceAccount && sourceAccount.isLeader) {
+    if (willCopy) {
       state.accounts.forEach(a => {
         if (a.id === data.accountId) return;
         const copy = JSON.parse(JSON.stringify(data));
@@ -1027,6 +1140,7 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
   renderDashboard(); renderJournal();
   showToast(copiedCount ? `Trade saved and copied to ${copiedCount} other account${copiedCount > 1 ? 's' : ''}` : 'Trade saved');
 });
+
 
 /* ---------------- Playbook page ---------------- */
 function renderPlaybook() {
@@ -1212,6 +1326,41 @@ function renderBreakdown() {
   trades.forEach(t => (t.mistakeTags || []).forEach(m => mistakeCounts[m] = (mistakeCounts[m] || 0) + 1));
   const topMistake = Object.entries(mistakeCounts).sort((a, b) => b[1] - a[1])[0];
   document.getElementById('bdTopMistake').textContent = topMistake ? `${topMistake[0]} (${topMistake[1]}×)` : 'None logged';
+
+  const withR = trades.filter(t => t.rMultiple != null && !isNaN(t.rMultiple));
+  const rRow = document.getElementById('breakdownRRow');
+  if (withR.length >= 3) {
+    rRow.style.display = '';
+    const buckets = [
+      { label: '< -2R', test: r => r < -2 },
+      { label: '-2 to -1R', test: r => r >= -2 && r < -1 },
+      { label: '-1 to 0R', test: r => r >= -1 && r < 0 },
+      { label: '0 to 1R', test: r => r >= 0 && r < 1 },
+      { label: '1 to 2R', test: r => r >= 1 && r < 2 },
+      { label: '2 to 3R', test: r => r >= 2 && r < 3 },
+      { label: '3R+', test: r => r >= 3 }
+    ];
+    const counts = buckets.map(b => withR.filter(t => b.test(t.rMultiple)).length);
+    const ctxR = document.getElementById('breakdownRChart');
+    if (charts.rDist) charts.rDist.destroy();
+    charts.rDist = new Chart(ctxR, {
+      type: 'bar',
+      data: {
+        labels: buckets.map(b => b.label),
+        datasets: [{ data: counts, backgroundColor: buckets.map(b => b.label.includes('-') ? '#ff5c5c' : (b.label === '0 to 1R' ? '#5c636b' : '#3ecf8e')), borderRadius: 4 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => c.raw + ' trade' + (c.raw !== 1 ? 's' : '') } } },
+        scales: {
+          x: { ticks: { color: '#9aa1a9', font: { size: 10.5, family: 'Inter' } }, grid: { display: false } },
+          y: { ticks: { color: '#5c636b', font: { size: 9, family: 'IBM Plex Mono' }, stepSize: 1 }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        }
+      }
+    });
+  } else {
+    rRow.style.display = 'none';
+  }
 }
 
 /* ---------------- Certificates page ---------------- */
@@ -1256,33 +1405,75 @@ function deleteCertificate(id) {
 
 /* ---------------- Expenses page ---------------- */
 function renderExpenses() {
-  const total = state.expenses.reduce((s, e) => s + e.amount, 0);
-  const monthStr = todayISO().slice(0, 7);
-  const monthTotal = state.expenses.filter(e => e.date.startsWith(monthStr)).reduce((s, e) => s + e.amount, 0);
-  const tradingNet = state.trades.reduce((s, t) => s + t.pnl, 0);
-  const totalEl = document.getElementById('expTotalAll');
-  totalEl.textContent = fmtMoney(total);
-  totalEl.className = 'stat-value' + (total > 0 ? ' negative' : '');
-  const monthEl = document.getElementById('expTotalMonth');
-  monthEl.textContent = fmtMoney(monthTotal);
-  monthEl.className = 'stat-value' + (monthTotal > 0 ? ' negative' : '');
-  const netVal = tradingNet - total;
-  const netEl = document.getElementById('expNetOfTrading');
+  const itemizedExpTotal = state.expenses.reduce((s, e) => s + e.amount, 0);
+  const itemizedPayoutTotal = state.payouts.reduce((s, p) => s + p.amount, 0);
+
+  const payoutInput = document.getElementById('manualPayoutTotal');
+  const expenseInput = document.getElementById('manualExpenseTotal');
+  if (document.activeElement !== payoutInput) {
+    payoutInput.value = state.manualFinance.payoutTotal != null ? state.manualFinance.payoutTotal : '';
+  }
+  if (document.activeElement !== expenseInput) {
+    expenseInput.value = state.manualFinance.expenseTotal != null ? state.manualFinance.expenseTotal : '';
+  }
+
+  document.getElementById('payoutItemizedRef').textContent = `Itemized log total: ${fmtMoney(itemizedPayoutTotal)}`;
+  document.getElementById('expenseItemizedRef').textContent = `Itemized log total: ${fmtMoney(itemizedExpTotal)}`;
+
+  const payoutVal = state.manualFinance.payoutTotal != null ? state.manualFinance.payoutTotal : 0;
+  const expenseVal = state.manualFinance.expenseTotal != null ? state.manualFinance.expenseTotal : 0;
+  const netVal = payoutVal - expenseVal;
+  const netEl = document.getElementById('netTakeHome');
   netEl.textContent = fmtMoney(netVal, { forceSign: true });
   netEl.className = 'stat-value ' + (netVal >= 0 ? 'positive' : 'negative');
 
-  const body = document.getElementById('expensesTableBody');
-  const sorted = state.expenses.slice().sort((a, b) => b.date.localeCompare(a.date));
-  if (!sorted.length) { body.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:20px;">No expenses logged</td></tr>`; return; }
-  body.innerHTML = sorted.map(e => `
-    <tr>
-      <td style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted);">${fmtDateShort(e.date)}</td>
-      <td><span class="badge">${escapeHtml(e.category)}</span></td>
-      <td style="font-size:12.5px; color:var(--text-secondary);">${escapeHtml(e.note || '—')}</td>
-      <td class="pnl-neg">${fmtMoney(e.amount)}</td>
-      <td><button class="icon-btn" onclick="deleteExpense('${e.id}')" title="Delete">${ICONS.trash}</button></td>
-    </tr>`).join('');
+  const expBody = document.getElementById('expensesTableBody');
+  const expSorted = state.expenses.slice().sort((a, b) => b.date.localeCompare(a.date));
+  if (!expSorted.length) { expBody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:20px;">No expenses logged</td></tr>`; }
+  else {
+    expBody.innerHTML = expSorted.map(e => `
+      <tr>
+        <td style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted);">${fmtDateShort(e.date)}</td>
+        <td><span class="badge">${escapeHtml(e.category)}</span></td>
+        <td style="font-size:12.5px; color:var(--text-secondary);">${escapeHtml(e.note || '—')}</td>
+        <td class="pnl-neg">${fmtMoney(e.amount)}</td>
+        <td><button class="icon-btn" onclick="deleteExpense('${e.id}')" title="Delete">${ICONS.trash}</button></td>
+      </tr>`).join('');
+  }
+
+  const payoutBody = document.getElementById('payoutsTableBody');
+  const paySorted = state.payouts.slice().sort((a, b) => b.date.localeCompare(a.date));
+  if (!paySorted.length) { payoutBody.innerHTML = `<tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:20px;">No payouts logged</td></tr>`; }
+  else {
+    payoutBody.innerHTML = paySorted.map(p => {
+      const acc = getAccount(p.accountId);
+      return `<tr>
+        <td style="font-family:var(--font-mono); font-size:11.5px; color:var(--text-muted);">${fmtDateShort(p.date)}</td>
+        <td style="font-size:12.5px;">${acc ? escapeHtml(acc.name) : '—'}</td>
+        <td style="font-size:12.5px; color:var(--text-secondary);">${escapeHtml(p.note || '—')}</td>
+        <td class="pnl-pos">${fmtMoney(p.amount)}</td>
+        <td><button class="icon-btn" onclick="deletePayout('${p.id}')" title="Delete">${ICONS.trash}</button></td>
+      </tr>`;
+    }).join('');
+  }
 }
+
+document.getElementById('manualPayoutTotal').addEventListener('input', function () {
+  state.manualFinance.payoutTotal = this.value === '' ? null : parseFloat(this.value);
+  saveManualFinance();
+  const netVal = (state.manualFinance.payoutTotal || 0) - (state.manualFinance.expenseTotal || 0);
+  const netEl = document.getElementById('netTakeHome');
+  netEl.textContent = fmtMoney(netVal, { forceSign: true });
+  netEl.className = 'stat-value ' + (netVal >= 0 ? 'positive' : 'negative');
+});
+document.getElementById('manualExpenseTotal').addEventListener('input', function () {
+  state.manualFinance.expenseTotal = this.value === '' ? null : parseFloat(this.value);
+  saveManualFinance();
+  const netVal = (state.manualFinance.payoutTotal || 0) - (state.manualFinance.expenseTotal || 0);
+  const netEl = document.getElementById('netTakeHome');
+  netEl.textContent = fmtMoney(netVal, { forceSign: true });
+  netEl.className = 'stat-value ' + (netVal >= 0 ? 'positive' : 'negative');
+});
 
 document.getElementById('addExpenseBtn').addEventListener('click', () => {
   document.getElementById('expenseForm').reset();
@@ -1309,6 +1500,40 @@ function deleteExpense(id) {
   if (!confirm('Delete this expense?')) return;
   state.expenses = state.expenses.filter(e => e.id !== id);
   saveExpenses();
+  renderExpenses();
+}
+
+function populatePayoutAccountSelect() {
+  const sel = document.getElementById('payoutAccount');
+  sel.innerHTML = '<option value="">— unassigned —</option>' + state.accounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('');
+}
+
+document.getElementById('addPayoutBtn').addEventListener('click', () => {
+  document.getElementById('payoutForm').reset();
+  document.getElementById('payoutDate').value = todayISO();
+  populatePayoutAccountSelect();
+  openModal('payoutModalOverlay');
+});
+
+document.getElementById('payoutForm').addEventListener('submit', e => {
+  e.preventDefault();
+  state.payouts.push({
+    id: uid(),
+    date: document.getElementById('payoutDate').value,
+    accountId: document.getElementById('payoutAccount').value || null,
+    amount: parseFloat(document.getElementById('payoutAmount').value) || 0,
+    note: document.getElementById('payoutNote').value.trim()
+  });
+  savePayouts();
+  closeModal('payoutModalOverlay');
+  renderExpenses();
+  showToast('Payout added');
+});
+
+function deletePayout(id) {
+  if (!confirm('Delete this payout?')) return;
+  state.payouts = state.payouts.filter(p => p.id !== id);
+  savePayouts();
   renderExpenses();
 }
 
@@ -1406,7 +1631,12 @@ function showToast(msg) {
 document.getElementById('exportJsonBtn').addEventListener('click', exportBackup);
 document.getElementById('exportQuickBtn').addEventListener('click', exportBackup);
 function exportBackup() {
-  const data = { accounts: state.accounts, trades: state.trades, reviews: state.reviews, exportedAt: new Date().toISOString() };
+  const data = {
+    accounts: state.accounts, trades: state.trades, reviews: state.reviews,
+    playbook: state.playbook, certificates: state.certificates,
+    expenses: state.expenses, payouts: state.payouts, manualFinance: state.manualFinance,
+    exportedAt: new Date().toISOString()
+  };
   downloadFile('edge-backup-' + todayISO() + '.json', JSON.stringify(data, null, 2), 'application/json');
 }
 
@@ -1440,7 +1670,12 @@ document.getElementById('restoreFileInput').addEventListener('change', e => {
       state.accounts = data.accounts || [];
       state.trades = data.trades || [];
       state.reviews = data.reviews || [];
-      saveAccounts(); saveTrades(); saveReviews();
+      state.playbook = data.playbook || { rules: '', setups: [] };
+      state.certificates = data.certificates || [];
+      state.expenses = data.expenses || [];
+      state.payouts = data.payouts || [];
+      state.manualFinance = data.manualFinance || { payoutTotal: null, expenseTotal: null };
+      saveAccounts(); saveTrades(); saveReviews(); savePlaybook(); saveCertificates(); saveExpenses(); savePayouts(); saveManualFinance();
       renderAccountSwitcher(); renderAll();
       showToast('Backup restored');
     } catch (err) { alert('Could not read that file — is it a valid EDGE backup JSON?'); }
@@ -1449,9 +1684,11 @@ document.getElementById('restoreFileInput').addEventListener('change', e => {
 });
 
 document.getElementById('clearDataBtn').addEventListener('click', () => {
-  if (!confirm('This deletes every account, trade and review permanently. Continue?')) return;
+  if (!confirm('This deletes every account, trade, review, playbook entry, certificate, expense, and payout permanently. Continue?')) return;
   state.accounts = []; state.trades = []; state.reviews = [];
-  saveAccounts(); saveTrades(); saveReviews();
+  state.playbook = { rules: '', setups: [] }; state.certificates = [];
+  state.expenses = []; state.payouts = []; state.manualFinance = { payoutTotal: null, expenseTotal: null };
+  saveAccounts(); saveTrades(); saveReviews(); savePlaybook(); saveCertificates(); saveExpenses(); savePayouts(); saveManualFinance();
   renderAccountSwitcher(); renderAll();
   showToast('All data cleared');
 });
@@ -1563,6 +1800,7 @@ function renderAll() {
   renderBreakdown();
   renderCertificates();
   renderExpenses();
+  populatePayoutAccountSelect();
 }
 
 loadState();
