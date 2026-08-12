@@ -723,14 +723,31 @@ function syncLeaderTrades() {
   // Every trade that lives on the leader account is a candidate to mirror.
   const leaderTrades = state.trades.filter(t => t.accountId === leader.id);
   let created = 0;
+  let corrected = 0;
+
+  // Fields a copy should always inherit from its leader (everything except its own
+  // identity/account and its stripped screenshots).
+  const SYNC_FIELDS = ['symbol', 'direction', 'session', 'model', 'setupName', 'date',
+    'entryTime', 'contracts', 'pnl', 'outcome', 'rMultiple', 'holdMinutes', 'timeframe',
+    'premiumDiscount', 'ruleFollowed', 'mistakeTags', 'note'];
 
   leaderTrades.forEach(lt => {
     // Ensure this leader trade has a batchId so its copies can be grouped.
     if (!lt.batchId) lt.batchId = uid();
     // Which accounts already have a copy in this batch?
-    const covered = new Set(
-      state.trades.filter(t => t.batchId === lt.batchId).map(t => t.accountId)
-    );
+    const existingCopies = state.trades.filter(t => t.batchId === lt.batchId && t.id !== lt.id);
+    const covered = new Set(existingCopies.map(t => t.accountId));
+
+    // Correct any existing copy whose fields have drifted from the leader (e.g. P&L
+    // sign flipped because the leader was edited after copying).
+    existingCopies.forEach(copy => {
+      let changed = false;
+      SYNC_FIELDS.forEach(f => {
+        if (JSON.stringify(copy[f]) !== JSON.stringify(lt[f])) { copy[f] = lt[f]; changed = true; }
+      });
+      if (changed) corrected++;
+    });
+
     others.forEach(a => {
       if (covered.has(a.id)) return; // already mirrored to this account
       const copy = JSON.parse(JSON.stringify(lt));
@@ -747,17 +764,20 @@ function syncLeaderTrades() {
 
   saveTrades();
   renderAccountsPage(); renderDashboard(); renderJournal();
-  if (created === 0) {
-    showToast('Already in sync — nothing to copy');
+  if (created === 0 && corrected === 0) {
+    showToast('Already in sync — everything matches');
   } else {
-    showToast(`Synced — created ${created} copied trade${created > 1 ? 's' : ''}`);
+    const parts = [];
+    if (created > 0) parts.push(`created ${created} copy${created > 1 ? '...ies' : ''}`.replace('copy...ies', 'copies'));
+    if (corrected > 0) parts.push(`corrected ${corrected} mismatched`);
+    showToast('Synced — ' + parts.join(', '));
   }
 }
 document.getElementById('syncLeaderBtn').addEventListener('click', () => {
   const leader = state.accounts.find(a => a.isLeader);
   if (!leader) { alert('No leader account is set. Edit an account and toggle it as the leader first.'); return; }
   const others = state.accounts.filter(a => a.id !== leader.id).length;
-  if (confirm(`Copy every trade on "${leader.name}" across to your other ${others} account${others > 1 ? 's' : ''}?\n\nThis only fills in missing copies — it won't duplicate trades that are already mirrored.`)) {
+  if (confirm(`Sync every trade from "${leader.name}" across to your other ${others} account${others > 1 ? 's' : ''}?\n\nThis fills in any missing copies and corrects copies whose details (e.g. P&L) have drifted from the leader. It won't create duplicates.`)) {
     syncLeaderTrades();
   }
 });
@@ -1214,7 +1234,23 @@ document.getElementById('tradeForm').addEventListener('submit', e => {
   let copiedCount = 0;
   if (state.editingTradeId) {
     const t = state.trades.find(x => x.id === state.editingTradeId);
+    const wasLeaderOfBatch = t.batchId && !t.copiedFromLeader;
     Object.assign(t, data);
+    // If this is the leader trade of a copied batch, push the same edits to every
+    // mirror so their P&L / details can't drift out of sync with the leader.
+    if (wasLeaderOfBatch) {
+      state.trades.forEach(copy => {
+        if (copy.id === t.id) return;
+        if (copy.batchId !== t.batchId) return;
+        const keepAccount = copy.accountId; // copies stay on their own account
+        Object.assign(copy, data);
+        copy.accountId = keepAccount;
+        copy.copiedFromLeader = true;
+        copy.batchId = t.batchId;
+        copy.screenshots = [];   // copies never carry image data
+        copy.screenshot = null;
+      });
+    }
   } else {
     data.id = uid();
     const sourceAccount = getAccount(data.accountId);
