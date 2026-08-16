@@ -996,6 +996,16 @@ button, input, select, textarea {
 .review-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
 @media (max-width: 1000px) { .review-columns { grid-template-columns: 1fr; } }
 
+.past-review-body { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; margin-top: 10px; }
+@media (max-width: 1000px) { .past-review-body { grid-template-columns: 1fr; } }
+.past-review-col-label {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--text-muted); margin-bottom: 10px; padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.past-review-analysis .analysis-block { margin-bottom: 12px; }
+.past-review-analysis .mini-table { font-size: 11.5px; }
+
 .analysis-block { margin-bottom: 16px; }
 .analysis-block:last-child { margin-bottom: 0; }
 .analysis-block h4 {

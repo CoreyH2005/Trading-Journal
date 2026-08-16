@@ -49,7 +49,8 @@ let state = {
   tradeOutcome: 'win',
   outcomeManuallySet: false,
   csvRows: null,
-  csvHeaders: null
+  csvHeaders: null,
+  pendingAnalysis: null
 };
 
 let charts = {};
@@ -1757,9 +1758,21 @@ function renderPastReviews() {
         <div class="past-review-week">${start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
         <div class="past-review-stats">${statsLine}</div>
       </div>
-      ${r.worked ? `<div class="past-review-block"><div class="past-review-block-label">What worked</div><div class="past-review-block-text">${escapeHtml(r.worked)}</div></div>` : ''}
-      ${r.cut ? `<div class="past-review-block"><div class="past-review-block-label">What to cut</div><div class="past-review-block-text">${escapeHtml(r.cut)}</div></div>` : ''}
-      ${r.focus ? `<div class="past-review-block"><div class="past-review-block-label">Focus next week</div><div class="past-review-block-text">${escapeHtml(r.focus)}</div></div>` : ''}
+      <div class="past-review-body">
+        <div>
+          <div class="past-review-col-label">Your review</div>
+          ${r.worked ? `<div class="past-review-block"><div class="past-review-block-label">What worked</div><div class="past-review-block-text">${escapeHtml(r.worked)}</div></div>` : ''}
+          ${r.cut ? `<div class="past-review-block"><div class="past-review-block-label">What to cut</div><div class="past-review-block-text">${escapeHtml(r.cut)}</div></div>` : ''}
+          ${r.focus ? `<div class="past-review-block"><div class="past-review-block-label">Focus next week</div><div class="past-review-block-text">${escapeHtml(r.focus)}</div></div>` : ''}
+          ${(!r.worked && !r.cut && !r.focus) ? `<div class="past-review-block-text" style="color:var(--text-muted);">No written review for this week.</div>` : ''}
+        </div>
+        <div>
+          <div class="past-review-col-label">Auto-analysis</div>
+          ${r.analysisHtml
+            ? `<div class="past-review-analysis">${r.analysisHtml}</div>`
+            : `<div class="past-review-block-text" style="color:var(--text-muted);">No analysis saved for this week. Open the week above, run "Analyse this week", then click "Save to review".</div>`}
+        </div>
+      </div>
     </div>`;
   }).join('');
 }
@@ -1974,7 +1987,7 @@ function runWeeklyAnalysis() {
     ? `Only ${all.n} trade${all.n > 1 ? 's' : ''} this week — treat these as tendencies to watch, not proven edges. Patterns need 30+ trades before they mean much.`
     : `${all.n} trades is a workable sample, but still one week — check whether these patterns repeat.`;
 
-  area.innerHTML = `
+  const analysisHtml = `
     <div class="analysis-block"><p style="font-size:14px; color:var(--text-primary); font-weight:600;">${headline}</p></div>
     <div class="analysis-block"><h4>✓ Winners had in common (${winners.length})</h4>${li(winTraits)}</div>
     <div class="analysis-block"><h4>✗ Losers had in common (${losers.length})</h4>${li(loseTraits)}</div>
@@ -1987,6 +2000,38 @@ function runWeeklyAnalysis() {
     <div class="analysis-block"><h4>Focus next week</h4>${li(focus)}</div>
     <div class="analysis-block"><p style="font-size:11.5px; color:var(--text-muted); font-style:italic;">${escapeHtml(caveat)}</p></div>
   `;
+
+  // Hold it so it can be attached to this week's saved review.
+  state.pendingAnalysis = { weekStart: startStr, html: analysisHtml, savedAt: new Date().toISOString() };
+
+  area.innerHTML = analysisHtml + `
+    <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border-soft);">
+      <button class="btn btn-sm btn-primary" id="saveAnalysisBtn">💾 Save to review</button>
+      <span style="font-size:11.5px; color:var(--text-muted); margin-left:8px;">Pins this analysis to the week so it shows in Past reviews</span>
+    </div>`;
+
+  document.getElementById('saveAnalysisBtn').addEventListener('click', saveAnalysisToReview);
+}
+
+// Attach the current analysis to this week's review record (creating it if needed).
+function saveAnalysisToReview() {
+  if (!state.pendingAnalysis) { showToast('Run the analysis first'); return; }
+  const startStr = state.pendingAnalysis.weekStart;
+  let review = state.reviews.find(r => r.weekStart === startStr);
+  if (!review) {
+    review = {
+      id: uid(), weekStart: startStr,
+      worked: document.getElementById('reviewWorked').value.trim(),
+      cut: document.getElementById('reviewCut').value.trim(),
+      focus: document.getElementById('reviewFocus').value.trim()
+    };
+    state.reviews.push(review);
+  }
+  review.analysisHtml = state.pendingAnalysis.html;
+  review.analysisSavedAt = state.pendingAnalysis.savedAt;
+  saveReviews();
+  renderPastReviews();
+  showToast('Analysis saved to this week\'s review');
 }
 
 document.getElementById('runAnalysisBtn').addEventListener('click', runWeeklyAnalysis);
