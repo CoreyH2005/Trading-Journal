@@ -199,6 +199,15 @@ function getTrades(accountId = state.currentAccountId) {
   const list = accountId === 'all' ? state.trades.slice() : state.trades.filter(t => t.accountId === accountId);
   return list.sort((a, b) => a.date.localeCompare(b.date));
 }
+// Trades for analytics views (dashboard, calendar, breakdown). When the account
+// switcher is on "All accounts" we show the LEADER's trades only — the other accounts
+// are mirrored copies, so summing them would multiply P&L and trade count by 5.
+// Picking a specific account in the switcher still scopes to that account.
+function getScopedTrades() {
+  if (state.currentAccountId === 'all') return getLeaderTrades();
+  return getTrades(state.currentAccountId);
+}
+
 function getAccount(id) { return state.accounts.find(a => a.id === id); }
 
 // Returns only the leader account's trades (i.e. the trades YOU actually took, not the
@@ -362,16 +371,21 @@ function renderCrossAccountToday() {
 }
 
 function renderDashboard() {
-  const trades = getTrades();
+  const trades = getScopedTrades();
   const account = state.currentAccountId === 'all' ? null : getAccount(state.currentAccountId);
-  const startingBalance = account ? account.startingBalance : state.accounts.reduce((s, a) => s + a.startingBalance, 0);
+  // Trades are leader-scoped when "All accounts" is selected, so the balance baseline
+  // must be the leader's starting balance too — not the sum of all accounts.
+  const leaderAcct = state.accounts.find(a => a.isLeader);
+  const startingBalance = account
+    ? account.startingBalance
+    : (leaderAcct ? leaderAcct.startingBalance : state.accounts.reduce((s, a) => s + a.startingBalance, 0));
   const stats = computeStats(trades);
 
   document.getElementById('welcomeTitle').textContent = 'Welcome, Corey';
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  document.getElementById('welcomeMeta').textContent = `${today} — ${trades.length} trades on record${account ? ' · ' + account.name : ''}`;
+  document.getElementById('welcomeMeta').textContent = `${today} — ${trades.length} trades on record${account ? ' · ' + account.name : (leaderAcct ? ' · ' + leaderAcct.name + ' (leader)' : '')}`;
 
-  renderDailyLimitAlert(trades, account);
+  renderDailyLimitAlert(trades, account || leaderAcct);
   renderCrossAccountToday();
   renderStatGrid(stats);
   renderBalanceChart(trades, startingBalance, account);
@@ -479,7 +493,10 @@ function renderEdgeScore(trades, stats, drawdownSeries, startingBalance) {
 }
 
 function renderBalanceChart(trades, startingBalance, account) {
-  document.getElementById('balanceCardSub').textContent = account ? `${account.name} · starting ${fmtMoneyShort(startingBalance)}` : `All accounts · combined starting ${fmtMoneyShort(startingBalance)}`;
+  const leaderName = (state.accounts.find(a => a.isLeader) || {}).name;
+  document.getElementById('balanceCardSub').textContent = account
+    ? `${account.name} · starting ${fmtMoneyShort(startingBalance)}`
+    : `${leaderName ? leaderName + ' (leader)' : 'All accounts'} · starting ${fmtMoneyShort(startingBalance)}`;
   const series = computeEquitySeries(trades, startingBalance);
   const labels = series.map((s, i) => i === 0 ? 'Start' : fmtDateShort(s.date));
   const data = series.map(s => s.balance);
@@ -565,7 +582,7 @@ function renderRecentTrades(trades) {
 
 /* ---------------- Calendar ---------------- */
 function renderCalendar() {
-  const trades = getTrades();
+  const trades = getScopedTrades();
   const byDay = {};
   trades.forEach(t => { byDay[t.date] = (byDay[t.date] || 0) + t.pnl; });
 
@@ -1371,7 +1388,7 @@ document.getElementById('setupForm').addEventListener('submit', e => {
 
 /* ---------------- Breakdown page ---------------- */
 function renderBreakdown() {
-  const trades = getTrades();
+  const trades = getScopedTrades();
   document.getElementById('breakdownEmpty').classList.toggle('hidden', trades.length >= 3);
   document.getElementById('breakdownContent').classList.toggle('hidden', trades.length < 3);
   if (trades.length < 3) return;
@@ -1710,6 +1727,12 @@ function renderReview() {
   document.getElementById('reviewCut').value = existing ? existing.cut : '';
   document.getElementById('reviewFocus').value = existing ? existing.focus : '';
 
+  // Reset the auto-analysis panel whenever the week changes so stale results don't linger.
+  const analysisArea = document.getElementById('analysisArea');
+  if (analysisArea) {
+    analysisArea.innerHTML = `<div class="empty-state" style="padding:30px;"><div class="empty-state-sub">Click "Analyse this week" to have Claude break down this week's leader trades — what the winners shared, what the losers shared, and where the R actually went.</div></div>`;
+  }
+
   renderPastReviews();
 }
 
@@ -1763,6 +1786,156 @@ document.getElementById('saveReviewBtn').addEventListener('click', () => {
   renderPastReviews();
   showToast('Review saved');
 });
+
+/* ============================================
+   AI AUTO-ANALYSIS (Review page)
+   Uses the Anthropic API directly from the browser with the user's own key
+   (stored in localStorage). Analyses the current week's leader trades.
+   ============================================ */
+const ANALYSIS_API_KEY = 'edge_anthropic_key_v1';
+
+function getApiKey() {
+  let key = localStorage.getItem(ANALYSIS_API_KEY);
+  if (!key) {
+    key = prompt('Paste your Anthropic API key to enable auto-analysis.\n\nIt\'s stored only in this browser (localStorage) and sent directly to Anthropic — nowhere else. Starts with "sk-ant-".');
+    if (key) { key = key.trim(); localStorage.setItem(ANALYSIS_API_KEY, key); }
+  }
+  return key;
+}
+
+function buildTradePayload(trades) {
+  // Compact, structured view of each trade for the model.
+  return trades.map(t => ({
+    date: t.date,
+    time: t.entryTime || null,
+    symbol: t.symbol,
+    direction: t.direction,
+    session: t.session,
+    setup: t.setupName || t.model || null,
+    timeframe: t.timeframe || null,
+    premiumDiscount: t.premiumDiscount || null,
+    contracts: t.contracts || null,
+    pnl: t.pnl,
+    rMultiple: (t.rMultiple != null && t.rMultiple !== '') ? t.rMultiple : null,
+    outcome: getOutcome(t),
+    holdMinutes: t.holdMinutes || null,
+    ruleFollowed: t.ruleFollowed !== false,
+    mistakeTags: t.mistakeTags || [],
+    notes: t.note || null
+  }));
+}
+
+async function runWeeklyAnalysis() {
+  const area = document.getElementById('analysisArea');
+  const startStr = isoOf(state.reviewWeekStart);
+  const endStr = isoOf(addDays(state.reviewWeekStart, 6));
+  const weekTrades = getLeaderTrades().filter(t => t.date >= startStr && t.date <= endStr);
+
+  if (!weekTrades.length) {
+    area.innerHTML = `<div class="empty-state" style="padding:30px;"><div class="empty-state-sub">No trades logged on your leader account for this week — nothing to analyse.</div></div>`;
+    return;
+  }
+
+  const key = getApiKey();
+  if (!key) {
+    area.innerHTML = `<div class="empty-state" style="padding:30px;"><div class="empty-state-sub">No API key set. Click "Analyse this week" again and paste your Anthropic key to enable this.</div></div>`;
+    return;
+  }
+
+  area.innerHTML = `<div class="analysis-loading"><div class="analysis-spinner"></div> Claude is analysing ${weekTrades.length} trade${weekTrades.length > 1 ? 's' : ''}...</div>`;
+
+  const stats = computeStats(weekTrades);
+  const payload = buildTradePayload(weekTrades);
+
+  const weekLabel = `${state.reviewWeekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${addDays(state.reviewWeekStart, 6).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
+
+  const systemPrompt = `You are a sharp, blunt-but-fair trading performance coach reviewing a futures day trader's week. The trader runs an ICT-based model (liquidity sweeps, fair value gaps, iFVG, premium/discount) on NQ/MNQ, mostly NY AM and Asia sessions. Your job: find what the WINNING trades had in common and what the LOSING trades had in common, then give honest, specific, actionable takeaways.
+
+Rules:
+- Be direct. Call out leaks plainly. But base every claim on the data given — never invent details.
+- This is a small sample (one week). Where a pattern could just be noise, say so.
+- Look across: setup, session, entry time, direction, premium/discount, timeframe, hold time, rule-followed vs broken, mistake tags, position size, and the trader's own notes.
+- Pay special attention to whether rule-broken trades or specific mistake tags cluster in the losers.
+- Keep it tight and readable. Return ONLY valid JSON, no markdown, no preamble.
+
+Return this exact JSON shape:
+{
+  "headline": "one punchy sentence summarising the week",
+  "winners_common": ["2-4 specific things the winning trades shared"],
+  "losers_common": ["2-4 specific things the losing trades shared"],
+  "where_r_went": "1-2 sentences on where the R/P&L was won or lost (concentrated vs spread)",
+  "biggest_leak": "the single most important thing to fix, stated bluntly",
+  "focus_next_week": ["2-3 concrete, testable commitments for next week"],
+  "sample_caveat": "one sentence on how much to trust this given the sample size"
+}`;
+
+  const userPrompt = `Week: ${weekLabel}
+Totals (leader account only): ${fmtMoney(stats.netPnl, { forceSign: true })}, ${stats.totalR >= 0 ? '+' : ''}${stats.totalR.toFixed(1)}R, ${stats.winRate.toFixed(0)}% win rate, ${stats.total} trades.
+
+Trades (JSON):
+${JSON.stringify(payload, null, 2)}`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1500,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userPrompt }]
+      })
+    });
+
+    if (!response.ok) {
+      let msg = 'Request failed (' + response.status + ')';
+      if (response.status === 401) msg = 'API key rejected (401). Use the "Reset API key" link below and paste a valid key.';
+      else if (response.status === 429) msg = 'Rate limited (429) — wait a moment and try again.';
+      throw new Error(msg);
+    }
+
+    const data = await response.json();
+    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+    const clean = text.replace(/```json|```/g, '').trim();
+    let parsed;
+    try { parsed = JSON.parse(clean); }
+    catch (e) { throw new Error('Could not parse the analysis. Raw response:\n\n' + text.slice(0, 400)); }
+
+    renderAnalysis(parsed);
+  } catch (err) {
+    area.innerHTML = `<div class="analysis-block"><p style="color:var(--red);">${escapeHtml(err.message || String(err))}</p></div>
+      <div style="margin-top:10px;"><span class="view-chart-link" onclick="resetApiKey()">Reset API key</span></div>`;
+  }
+}
+
+function renderAnalysis(a) {
+  const area = document.getElementById('analysisArea');
+  const list = arr => (Array.isArray(arr) && arr.length) ? `<ul>${arr.map(x => `<li>${escapeHtml(String(x))}</li>`).join('')}</ul>` : '<p style="color:var(--text-muted);">—</p>';
+  area.innerHTML = `
+    ${a.headline ? `<div class="analysis-block"><p style="font-size:14px; color:var(--text-primary); font-weight:600;">${escapeHtml(a.headline)}</p></div>` : ''}
+    <div class="analysis-block"><h4>✓ Winners had in common</h4>${list(a.winners_common)}</div>
+    <div class="analysis-block"><h4>✗ Losers had in common</h4>${list(a.losers_common)}</div>
+    ${a.where_r_went ? `<div class="analysis-block"><h4>Where the R went</h4><p>${escapeHtml(a.where_r_went)}</p></div>` : ''}
+    ${a.biggest_leak ? `<div class="analysis-block"><h4>Biggest leak</h4><p style="color:var(--red);">${escapeHtml(a.biggest_leak)}</p></div>` : ''}
+    <div class="analysis-block"><h4>Focus next week</h4>${list(a.focus_next_week)}</div>
+    ${a.sample_caveat ? `<div class="analysis-block"><p style="font-size:11.5px; color:var(--text-muted); font-style:italic;">${escapeHtml(a.sample_caveat)}</p></div>` : ''}
+    <div style="margin-top:8px;"><span class="view-chart-link" onclick="resetApiKey()">Reset API key</span></div>
+  `;
+}
+
+function resetApiKey() {
+  if (confirm('Remove the stored Anthropic API key from this browser?')) {
+    localStorage.removeItem(ANALYSIS_API_KEY);
+    showToast('API key removed');
+  }
+}
+
+document.getElementById('runAnalysisBtn').addEventListener('click', runWeeklyAnalysis);
 
 /* ---------------- Modal helpers ---------------- */
 function openModal(id) { document.getElementById(id).classList.add('open'); }
