@@ -50,7 +50,10 @@ let state = {
   outcomeManuallySet: false,
   csvRows: null,
   csvHeaders: null,
-  pendingAnalysis: null
+  pendingAnalysis: null,
+  dashRange: 'all',
+  dashDateFrom: null,
+  dashDateTo: null
 };
 
 let charts = {};
@@ -207,6 +210,38 @@ function getTrades(accountId = state.currentAccountId) {
 function getScopedTrades() {
   if (state.currentAccountId === 'all') return getLeaderTrades();
   return getTrades(state.currentAccountId);
+}
+
+// Applies the dashboard's date-range selector to a trade list.
+function applyDashRange(trades) {
+  const today = todayISO();
+  let from = null, to = null;
+  switch (state.dashRange) {
+    case 'today': from = today; to = today; break;
+    case '7d': from = isoOf(addDays(new Date(), -6)); to = today; break;
+    case '30d': from = isoOf(addDays(new Date(), -29)); to = today; break;
+    case 'thisWeek': from = isoOf(startOfWeek(new Date())); to = isoOf(addDays(startOfWeek(new Date()), 6)); break;
+    case 'thisMonth': from = today.slice(0, 7) + '-01'; to = today; break;
+    case 'custom': from = state.dashDateFrom || null; to = state.dashDateTo || null; break;
+    default: return trades; // 'all'
+  }
+  return trades.filter(t => (!from || t.date >= from) && (!to || t.date <= to));
+}
+
+function dashRangeLabel() {
+  switch (state.dashRange) {
+    case 'today': return 'today';
+    case '7d': return 'last 7 days';
+    case '30d': return 'last 30 days';
+    case 'thisWeek': return 'this week';
+    case 'thisMonth': return 'this month';
+    case 'custom':
+      if (state.dashDateFrom || state.dashDateTo) {
+        return `${state.dashDateFrom ? fmtDateShort(state.dashDateFrom) : 'start'} – ${state.dashDateTo ? fmtDateShort(state.dashDateTo) : 'now'}`;
+      }
+      return 'custom range';
+    default: return 'all time';
+  }
 }
 
 function getAccount(id) { return state.accounts.find(a => a.id === id); }
@@ -372,7 +407,7 @@ function renderCrossAccountToday() {
 }
 
 function renderDashboard() {
-  const trades = getScopedTrades();
+  const trades = applyDashRange(getScopedTrades());
   const account = state.currentAccountId === 'all' ? null : getAccount(state.currentAccountId);
   // Trades are leader-scoped when "All accounts" is selected, so the balance baseline
   // must be the leader's starting balance too — not the sum of all accounts.
@@ -384,7 +419,7 @@ function renderDashboard() {
 
   document.getElementById('welcomeTitle').textContent = 'Welcome, Corey';
   const today = new Date().toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
-  document.getElementById('welcomeMeta').textContent = `${today} — ${trades.length} trades on record${account ? ' · ' + account.name : (leaderAcct ? ' · ' + leaderAcct.name + ' (leader)' : '')}`;
+  document.getElementById('welcomeMeta').textContent = `${today} — ${trades.length} trades · ${dashRangeLabel()}${account ? ' · ' + account.name : (leaderAcct ? ' · ' + leaderAcct.name + ' (leader)' : '')}`;
 
   renderDailyLimitAlert(trades, account || leaderAcct);
   renderCrossAccountToday();
@@ -403,6 +438,7 @@ function renderDashboard() {
 function renderStatGrid(stats) {
   const cards = [
     { label: 'Net P&L', value: fmtMoney(stats.netPnl, { forceSign: true }), cls: stats.netPnl >= 0 ? 'positive' : 'negative' },
+    { label: 'Net R', value: (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(1) + 'R', cls: stats.totalR >= 0 ? 'positive' : 'negative', sub: 'Sum of R on trades with R logged' },
     { label: 'Win %', value: stats.winRate.toFixed(1) + '%', cls: stats.winRate >= 50 ? 'positive' : 'negative', sub: `W/L only${stats.bes ? ' · ' + stats.bes + ' BE excluded' : ''}` },
     { label: 'Profit factor', value: stats.profitFactor.toFixed(2), cls: stats.profitFactor >= 1.5 ? 'positive' : (stats.profitFactor < 1 ? 'negative' : '') },
     { label: 'Avg win / loss', value: stats.avgLoss ? (stats.avgWin / stats.avgLoss).toFixed(2) : '—', cls: '' },
@@ -1173,6 +1209,23 @@ function editTrade(id) {
 
 document.getElementById('logTradeBtn').addEventListener('click', openLogTradeModal);
 document.getElementById('dashLogTradeBtn').addEventListener('click', openLogTradeModal);
+
+/* Dashboard time-period selector */
+document.getElementById('dashRange').addEventListener('change', function () {
+  state.dashRange = this.value;
+  const isCustom = this.value === 'custom';
+  document.getElementById('dashDateFrom').classList.toggle('hidden', !isCustom);
+  document.getElementById('dashDateTo').classList.toggle('hidden', !isCustom);
+  renderDashboard();
+});
+document.getElementById('dashDateFrom').addEventListener('change', function () {
+  state.dashDateFrom = this.value || null;
+  renderDashboard();
+});
+document.getElementById('dashDateTo').addEventListener('change', function () {
+  state.dashDateTo = this.value || null;
+  renderDashboard();
+});
 document.getElementById('journalLogTradeBtn').addEventListener('click', openLogTradeModal);
 
 document.getElementById('ruleToggle').addEventListener('click', function () {

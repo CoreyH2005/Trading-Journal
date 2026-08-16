@@ -74,6 +74,17 @@
         <div class="welcome-meta" id="welcomeMeta">—</div>
       </div>
       <div class="page-actions">
+        <select id="dashRange" title="Time period shown on the dashboard">
+          <option value="all">All time</option>
+          <option value="today">Today</option>
+          <option value="7d">Last 7 days</option>
+          <option value="30d">Last 30 days</option>
+          <option value="thisWeek">This week</option>
+          <option value="thisMonth">This month</option>
+          <option value="custom">Custom range…</option>
+        </select>
+        <input type="date" id="dashDateFrom" class="hidden" title="From">
+        <input type="date" id="dashDateTo" class="hidden" title="To">
         <button class="btn" id="exportQuickBtn">Export backup</button>
         <button class="btn btn-primary" id="dashLogTradeBtn">+ Log trade</button>
       </div>

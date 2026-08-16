@@ -616,6 +616,18 @@ button, input, select, textarea {
   font-size: 12.5px;
 }
 
+/* Dashboard time-period selector */
+#dashRange, #dashDateFrom, #dashDateTo {
+  background: var(--bg-elevated-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 7px 10px;
+  font-size: 12.5px;
+  font-family: var(--font-ui);
+}
+#dashRange:focus, #dashDateFrom:focus, #dashDateTo:focus { outline: none; border-color: var(--blue); }
+
 .trade-entry {
   display: grid;
   grid-template-columns: 90px 1fr auto;
