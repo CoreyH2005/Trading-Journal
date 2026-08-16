@@ -201,6 +201,14 @@ function getTrades(accountId = state.currentAccountId) {
 }
 function getAccount(id) { return state.accounts.find(a => a.id === id); }
 
+// Returns only the leader account's trades (i.e. the trades YOU actually took, not the
+// mirrored copies on the other accounts). Falls back to all trades if no leader is set.
+function getLeaderTrades() {
+  const leader = state.accounts.find(a => a.isLeader);
+  if (!leader) return state.trades.slice().sort((a, b) => a.date.localeCompare(b.date));
+  return state.trades.filter(t => t.accountId === leader.id).sort((a, b) => a.date.localeCompare(b.date));
+}
+
 function getOutcome(t) {
   if (t.outcome === 'win' || t.outcome === 'loss' || t.outcome === 'be') return t.outcome;
   return t.pnl > 0 ? 'win' : (t.pnl < 0 ? 'loss' : 'be');
@@ -222,7 +230,8 @@ function computeStats(trades) {
   const avgHold = total ? trades.reduce((s, t) => s + (t.holdMinutes || 0), 0) / total : 0;
   const ruleFollowedCount = trades.filter(t => t.ruleFollowed).length;
   const adherence = total ? (ruleFollowedCount / total) * 100 : 0;
-  return { total, wins: wins.length, losses: losses.length, bes: bes.length, netPnl, grossWin, grossLoss, winRate, profitFactor, avgWin, avgLoss, avgHold, adherence };
+  const totalR = trades.reduce((s, t) => s + (parseFloat(t.rMultiple) || 0), 0);
+  return { total, wins: wins.length, losses: losses.length, bes: bes.length, netPnl, grossWin, grossLoss, winRate, profitFactor, avgWin, avgLoss, avgHold, adherence, totalR };
 }
 
 function computeEquitySeries(trades, startingBalance) {
@@ -1681,7 +1690,7 @@ function renderReview() {
   document.getElementById('reviewWeekLabel').textContent = `${start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
 
   const startStr = isoOf(start), endStr = isoOf(end);
-  const weekTrades = getTrades().filter(t => t.date >= startStr && t.date <= endStr);
+  const weekTrades = getLeaderTrades().filter(t => t.date >= startStr && t.date <= endStr);
   const stats = computeStats(weekTrades);
   const byDay = {};
   weekTrades.forEach(t => byDay[t.date] = (byDay[t.date] || 0) + t.pnl);
@@ -1690,6 +1699,7 @@ function renderReview() {
   document.getElementById('reviewSummary').innerHTML = `
     <div class="stat-card"><div class="stat-label">Trades</div><div class="stat-value">${stats.total}</div></div>
     <div class="stat-card"><div class="stat-label">Net P&L</div><div class="stat-value ${stats.netPnl >= 0 ? 'positive' : 'negative'}">${fmtMoney(stats.netPnl, { forceSign: true })}</div></div>
+    <div class="stat-card"><div class="stat-label">Net R</div><div class="stat-value ${stats.totalR >= 0 ? 'positive' : 'negative'}">${(stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(1)}R</div></div>
     <div class="stat-card"><div class="stat-label">Win rate</div><div class="stat-value">${stats.winRate.toFixed(0)}%</div></div>
     <div class="stat-card"><div class="stat-label">Best day</div><div class="stat-value" style="font-size:16px;">${bestDay ? fmtDateShort(bestDay[0]) + ' · ' + fmtMoney(bestDay[1], { forceSign: true }) : '—'}</div></div>
   `;
@@ -1710,11 +1720,19 @@ function renderPastReviews() {
   list.innerHTML = sorted.map(r => {
     const start = new Date(r.weekStart + 'T00:00:00');
     const end = addDays(start, 6);
+    // Recompute stats live from the leader account's trades for this week, so reviews
+    // saved under the old all-accounts logic self-correct instead of showing stale numbers.
+    const wkStart = r.weekStart, wkEnd = isoOf(end);
+    const wkTrades = getLeaderTrades().filter(t => t.date >= wkStart && t.date <= wkEnd);
+    const s = computeStats(wkTrades);
+    const statsLine = wkTrades.length
+      ? fmtMoney(s.netPnl, { forceSign: true }) + ' · ' + (s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(1) + 'R · ' + s.winRate.toFixed(0) + '% WR · ' + s.total + ' trades'
+      : '';
     return `
     <div class="past-review-card">
       <div class="past-review-header">
         <div class="past-review-week">${start.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</div>
-        <div class="past-review-stats">${r.netPnl !== undefined ? fmtMoney(r.netPnl, { forceSign: true }) + ' · ' + r.winRate.toFixed(0) + '% WR · ' + r.trades + ' trades' : ''}</div>
+        <div class="past-review-stats">${statsLine}</div>
       </div>
       ${r.worked ? `<div class="past-review-block"><div class="past-review-block-label">What worked</div><div class="past-review-block-text">${escapeHtml(r.worked)}</div></div>` : ''}
       ${r.cut ? `<div class="past-review-block"><div class="past-review-block-label">What to cut</div><div class="past-review-block-text">${escapeHtml(r.cut)}</div></div>` : ''}
@@ -1729,7 +1747,7 @@ document.getElementById('reviewNextWeekBtn').addEventListener('click', () => { s
 document.getElementById('saveReviewBtn').addEventListener('click', () => {
   const startStr = isoOf(state.reviewWeekStart);
   const endStr = isoOf(addDays(state.reviewWeekStart, 6));
-  const weekTrades = getTrades().filter(t => t.date >= startStr && t.date <= endStr);
+  const weekTrades = getLeaderTrades().filter(t => t.date >= startStr && t.date <= endStr);
   const stats = computeStats(weekTrades);
   const existing = state.reviews.find(r => r.weekStart === startStr);
   const data = {
@@ -1737,7 +1755,7 @@ document.getElementById('saveReviewBtn').addEventListener('click', () => {
     worked: document.getElementById('reviewWorked').value.trim(),
     cut: document.getElementById('reviewCut').value.trim(),
     focus: document.getElementById('reviewFocus').value.trim(),
-    netPnl: stats.netPnl, winRate: stats.winRate, trades: stats.total
+    netPnl: stats.netPnl, winRate: stats.winRate, trades: stats.total, totalR: stats.totalR
   };
   if (existing) Object.assign(existing, data);
   else { data.id = uid(); state.reviews.push(data); }
