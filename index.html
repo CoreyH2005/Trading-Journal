@@ -233,23 +233,40 @@
 
     <div class="review-summary" id="reviewSummary"></div>
 
-    <div class="card">
-      <div class="review-form-section">
-        <label>What worked — do more of this</label>
-        <div class="hint">Setups, sessions, behaviours that made money</div>
-        <textarea id="reviewWorked" placeholder="e.g. NY AM iFVG continuation entries after a clean liquidity sweep..."></textarea>
+    <div class="review-columns">
+      <div class="card">
+        <div class="card-title" style="margin-bottom:4px;">Your review</div>
+        <div class="card-sub" style="margin-bottom:16px;">Your own read on the week</div>
+        <div class="review-form-section">
+          <label>What worked — do more of this</label>
+          <div class="hint">Setups, sessions, behaviours that made money</div>
+          <textarea id="reviewWorked" placeholder="e.g. NY AM iFVG continuation entries after a clean liquidity sweep..."></textarea>
+        </div>
+        <div class="review-form-section">
+          <label>What to cut — stop doing this</label>
+          <div class="hint">Mistakes, leaks, rule breaks</div>
+          <textarea id="reviewCut" placeholder="e.g. Revenge entries after the first loss of the session..."></textarea>
+        </div>
+        <div class="review-form-section">
+          <label>Focus for next week</label>
+          <div class="hint">One or two concrete commitments</div>
+          <textarea id="reviewFocus" placeholder="e.g. No trades outside the AM window. Journal every entry before the close..."></textarea>
+        </div>
+        <button class="btn btn-primary" id="saveReviewBtn">Save review</button>
       </div>
-      <div class="review-form-section">
-        <label>What to cut — stop doing this</label>
-        <div class="hint">Mistakes, leaks, rule breaks</div>
-        <textarea id="reviewCut" placeholder="e.g. Revenge entries after the first loss of the session..."></textarea>
+
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">
+          <div class="card-title">Auto-analysis</div>
+          <button class="btn btn-sm btn-primary" id="runAnalysisBtn">⚡ Analyse this week</button>
+        </div>
+        <div class="card-sub" style="margin-bottom:16px;">What your winners and losers had in common — read against your own review on the left</div>
+        <div id="analysisArea">
+          <div class="empty-state" style="padding:30px;">
+            <div class="empty-state-sub">Click "Analyse this week" to have Claude break down this week's leader trades — what the winners shared, what the losers shared, and where the R actually went.</div>
+          </div>
+        </div>
       </div>
-      <div class="review-form-section">
-        <label>Focus for next week</label>
-        <div class="hint">One or two concrete commitments</div>
-        <textarea id="reviewFocus" placeholder="e.g. No trades outside the AM window. Journal every entry before the close..."></textarea>
-      </div>
-      <button class="btn btn-primary" id="saveReviewBtn">Save review</button>
     </div>
 
     <div style="margin-top:22px;">
