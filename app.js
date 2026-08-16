@@ -1788,151 +1788,205 @@ document.getElementById('saveReviewBtn').addEventListener('click', () => {
 });
 
 /* ============================================
-   AI AUTO-ANALYSIS (Review page)
-   Uses the Anthropic API directly from the browser with the user's own key
-   (stored in localStorage). Analyses the current week's leader trades.
+   AUTO-ANALYSIS (Review page) — rule-based, no API key needed.
+   Compares winners vs losers across every logged dimension and reports
+   real computed numbers rather than an interpretation.
    ============================================ */
-const ANALYSIS_API_KEY = 'edge_anthropic_key_v1';
 
-function getApiKey() {
-  let key = localStorage.getItem(ANALYSIS_API_KEY);
-  if (!key) {
-    key = prompt('Paste your Anthropic API key to enable auto-analysis.\n\nIt\'s stored only in this browser (localStorage) and sent directly to Anthropic — nowhere else. Starts with "sk-ant-".');
-    if (key) { key = key.trim(); localStorage.setItem(ANALYSIS_API_KEY, key); }
-  }
-  return key;
+function statsFor(trades) {
+  const wins = trades.filter(t => getOutcome(t) === 'win').length;
+  const losses = trades.filter(t => getOutcome(t) === 'loss').length;
+  const decisive = wins + losses;
+  return {
+    n: trades.length,
+    pnl: trades.reduce((s, t) => s + t.pnl, 0),
+    r: trades.reduce((s, t) => s + (parseFloat(t.rMultiple) || 0), 0),
+    wr: decisive ? (wins / decisive) * 100 : 0,
+    wins, losses
+  };
 }
 
-function buildTradePayload(trades) {
-  // Compact, structured view of each trade for the model.
-  return trades.map(t => ({
-    date: t.date,
-    time: t.entryTime || null,
-    symbol: t.symbol,
-    direction: t.direction,
-    session: t.session,
-    setup: t.setupName || t.model || null,
-    timeframe: t.timeframe || null,
-    premiumDiscount: t.premiumDiscount || null,
-    contracts: t.contracts || null,
-    pnl: t.pnl,
-    rMultiple: (t.rMultiple != null && t.rMultiple !== '') ? t.rMultiple : null,
-    outcome: getOutcome(t),
-    holdMinutes: t.holdMinutes || null,
-    ruleFollowed: t.ruleFollowed !== false,
-    mistakeTags: t.mistakeTags || [],
-    notes: t.note || null
-  }));
+// Group trades by a field and return sorted rows with stats.
+function groupBy(trades, keyFn, label) {
+  const map = {};
+  trades.forEach(t => {
+    const k = keyFn(t);
+    if (k === null || k === undefined || k === '') return;
+    (map[k] = map[k] || []).push(t);
+  });
+  const rows = Object.entries(map).map(([k, list]) => Object.assign({ key: k, label }, statsFor(list)));
+  return rows.sort((a, b) => a.r - b.r); // worst first
 }
 
-async function runWeeklyAnalysis() {
+// Bucket entry times into session-ish windows.
+function timeBucket(t) {
+  if (!t.entryTime) return null;
+  const h = parseInt(String(t.entryTime).split(':')[0], 10);
+  if (isNaN(h)) return null;
+  if (h < 9) return 'Before 09:00';
+  if (h < 10) return '09:00–09:59';
+  if (h < 11) return '10:00–10:59';
+  if (h < 12) return '11:00–11:59';
+  return '12:00 or later';
+}
+
+function fmtR(r) { return (r >= 0 ? '+' : '') + r.toFixed(1) + 'R'; }
+
+// Build a comparison of a dimension between winners and losers.
+function compareDimension(winners, losers, keyFn) {
+  const wMap = {}, lMap = {};
+  winners.forEach(t => { const k = keyFn(t); if (k) wMap[k] = (wMap[k] || 0) + 1; });
+  losers.forEach(t => { const k = keyFn(t); if (k) lMap[k] = (lMap[k] || 0) + 1; });
+  const keys = [...new Set([...Object.keys(wMap), ...Object.keys(lMap)])];
+  return keys.map(k => ({ key: k, w: wMap[k] || 0, l: lMap[k] || 0 }));
+}
+
+// Pick out the dominant trait of a set (a value that covers >=60% of them).
+function dominantTrait(trades, keyFn, minShare = 0.6) {
+  const counts = {};
+  let withValue = 0;
+  trades.forEach(t => { const k = keyFn(t); if (k) { counts[k] = (counts[k] || 0) + 1; withValue++; } });
+  if (!withValue) return null;
+  const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  if (!top) return null;
+  const share = top[1] / withValue;
+  return share >= minShare ? { value: top[0], count: top[1], of: withValue, share } : null;
+}
+
+function runWeeklyAnalysis() {
   const area = document.getElementById('analysisArea');
   const startStr = isoOf(state.reviewWeekStart);
   const endStr = isoOf(addDays(state.reviewWeekStart, 6));
-  const weekTrades = getLeaderTrades().filter(t => t.date >= startStr && t.date <= endStr);
+  const trades = getLeaderTrades().filter(t => t.date >= startStr && t.date <= endStr);
 
-  if (!weekTrades.length) {
-    area.innerHTML = `<div class="empty-state" style="padding:30px;"><div class="empty-state-sub">No trades logged on your leader account for this week — nothing to analyse.</div></div>`;
+  if (!trades.length) {
+    area.innerHTML = '<div class="empty-state" style="padding:30px;"><div class="empty-state-sub">No trades logged on your leader account for this week — nothing to analyse.</div></div>';
     return;
   }
 
-  const key = getApiKey();
-  if (!key) {
-    area.innerHTML = `<div class="empty-state" style="padding:30px;"><div class="empty-state-sub">No API key set. Click "Analyse this week" again and paste your Anthropic key to enable this.</div></div>`;
-    return;
+  const winners = trades.filter(t => getOutcome(t) === 'win');
+  const losers = trades.filter(t => getOutcome(t) === 'loss');
+  const all = statsFor(trades);
+
+  const DIMS = [
+    { name: 'Session', fn: t => t.session || null },
+    { name: 'Setup', fn: t => t.setupName || t.model || null },
+    { name: 'Entry time', fn: timeBucket },
+    { name: 'Direction', fn: t => t.direction || null },
+    { name: 'Premium/Discount', fn: t => t.premiumDiscount || null },
+    { name: 'Timeframe', fn: t => t.timeframe || null }
+  ];
+
+  // --- Traits shared by winners / losers ---
+  const winTraits = [], loseTraits = [];
+  DIMS.forEach(d => {
+    const w = dominantTrait(winners, d.fn);
+    if (w) winTraits.push(`${d.name}: <b>${escapeHtml(w.value)}</b> in ${w.count}/${w.of} winners`);
+    const l = dominantTrait(losers, d.fn);
+    if (l) loseTraits.push(`${d.name}: <b>${escapeHtml(l.value)}</b> in ${l.count}/${l.of} losers`);
+  });
+
+  // Rule adherence split
+  const followed = trades.filter(t => t.ruleFollowed !== false);
+  const broken = trades.filter(t => t.ruleFollowed === false);
+  const fS = statsFor(followed), bS = statsFor(broken);
+  if (broken.length) {
+    loseTraits.push(`Rule-broken trades: <b>${broken.length}</b> this week, ${fmtR(bS.r)} vs ${fmtR(fS.r)} on rule-followed`);
   }
 
-  area.innerHTML = `<div class="analysis-loading"><div class="analysis-spinner"></div> Claude is analysing ${weekTrades.length} trade${weekTrades.length > 1 ? 's' : ''}...</div>`;
+  // Mistake tags concentrated in losers
+  const tagCounts = {};
+  losers.forEach(t => (t.mistakeTags || []).forEach(m => tagCounts[m] = (tagCounts[m] || 0) + 1));
+  const topTags = Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  topTags.forEach(([tag, n]) => loseTraits.push(`Tagged <b>${escapeHtml(tag)}</b> on ${n} losing trade${n > 1 ? 's' : ''}`));
 
-  const stats = computeStats(weekTrades);
-  const payload = buildTradePayload(weekTrades);
-
-  const weekLabel = `${state.reviewWeekStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${addDays(state.reviewWeekStart, 6).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}`;
-
-  const systemPrompt = `You are a sharp, blunt-but-fair trading performance coach reviewing a futures day trader's week. The trader runs an ICT-based model (liquidity sweeps, fair value gaps, iFVG, premium/discount) on NQ/MNQ, mostly NY AM and Asia sessions. Your job: find what the WINNING trades had in common and what the LOSING trades had in common, then give honest, specific, actionable takeaways.
-
-Rules:
-- Be direct. Call out leaks plainly. But base every claim on the data given — never invent details.
-- This is a small sample (one week). Where a pattern could just be noise, say so.
-- Look across: setup, session, entry time, direction, premium/discount, timeframe, hold time, rule-followed vs broken, mistake tags, position size, and the trader's own notes.
-- Pay special attention to whether rule-broken trades or specific mistake tags cluster in the losers.
-- Keep it tight and readable. Return ONLY valid JSON, no markdown, no preamble.
-
-Return this exact JSON shape:
-{
-  "headline": "one punchy sentence summarising the week",
-  "winners_common": ["2-4 specific things the winning trades shared"],
-  "losers_common": ["2-4 specific things the losing trades shared"],
-  "where_r_went": "1-2 sentences on where the R/P&L was won or lost (concentrated vs spread)",
-  "biggest_leak": "the single most important thing to fix, stated bluntly",
-  "focus_next_week": ["2-3 concrete, testable commitments for next week"],
-  "sample_caveat": "one sentence on how much to trust this given the sample size"
-}`;
-
-  const userPrompt = `Week: ${weekLabel}
-Totals (leader account only): ${fmtMoney(stats.netPnl, { forceSign: true })}, ${stats.totalR >= 0 ? '+' : ''}${stats.totalR.toFixed(1)}R, ${stats.winRate.toFixed(0)}% win rate, ${stats.total} trades.
-
-Trades (JSON):
-${JSON.stringify(payload, null, 2)}`;
-
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1500,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
-    });
-
-    if (!response.ok) {
-      let msg = 'Request failed (' + response.status + ')';
-      if (response.status === 401) msg = 'API key rejected (401). Use the "Reset API key" link below and paste a valid key.';
-      else if (response.status === 429) msg = 'Rate limited (429) — wait a moment and try again.';
-      throw new Error(msg);
-    }
-
-    const data = await response.json();
-    const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
-    const clean = text.replace(/```json|```/g, '').trim();
-    let parsed;
-    try { parsed = JSON.parse(clean); }
-    catch (e) { throw new Error('Could not parse the analysis. Raw response:\n\n' + text.slice(0, 400)); }
-
-    renderAnalysis(parsed);
-  } catch (err) {
-    area.innerHTML = `<div class="analysis-block"><p style="color:var(--red);">${escapeHtml(err.message || String(err))}</p></div>
-      <div style="margin-top:10px;"><span class="view-chart-link" onclick="resetApiKey()">Reset API key</span></div>`;
+  // Avg size / hold comparison
+  const avg = (list, f) => { const v = list.map(f).filter(x => x != null && !isNaN(x)); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const wSize = avg(winners, t => parseFloat(t.contracts)), lSize = avg(losers, t => parseFloat(t.contracts));
+  if (wSize != null && lSize != null && Math.abs(wSize - lSize) >= 0.5) {
+    const bigger = lSize > wSize ? 'losers' : 'winners';
+    loseTraits.push(`Average size is larger on <b>${bigger}</b> (${lSize.toFixed(1)} vs ${wSize.toFixed(1)} contracts)`);
   }
-}
+  const wHold = avg(winners, t => parseFloat(t.holdMinutes)), lHold = avg(losers, t => parseFloat(t.holdMinutes));
+  if (wHold != null && lHold != null && Math.abs(wHold - lHold) >= 3) {
+    winTraits.push(`Winners held <b>${wHold.toFixed(0)} min</b> on average vs ${lHold.toFixed(0)} min on losers`);
+  }
 
-function renderAnalysis(a) {
-  const area = document.getElementById('analysisArea');
-  const list = arr => (Array.isArray(arr) && arr.length) ? `<ul>${arr.map(x => `<li>${escapeHtml(String(x))}</li>`).join('')}</ul>` : '<p style="color:var(--text-muted);">—</p>';
+  // --- Where the R went ---
+  const sorted = trades.slice().sort((a, b) => (parseFloat(a.rMultiple) || 0) - (parseFloat(b.rMultiple) || 0));
+  const worst = sorted[0], best = sorted[sorted.length - 1];
+  const lossR = Math.abs(losers.reduce((s, t) => s + (parseFloat(t.rMultiple) || 0), 0));
+  const worstR = Math.abs(parseFloat(worst && worst.rMultiple) || 0);
+  const concentration = lossR > 0 ? (worstR / lossR) * 100 : 0;
+  let whereR = `Net ${fmtR(all.r)} across ${all.n} trades. `;
+  if (worst && best) {
+    whereR += `Best ${fmtR(parseFloat(best.rMultiple) || 0)}, worst ${fmtR(parseFloat(worst.rMultiple) || 0)}. `;
+  }
+  if (losers.length > 1) {
+    whereR += concentration >= 50
+      ? `Your single worst trade is ${concentration.toFixed(0)}% of all R lost — this week was one bad trade, not a broken process.`
+      : `Losses are spread across ${losers.length} trades rather than one blow-up — this looks like a process leak, not a one-off.`;
+  }
+
+  // --- Worst / best groups ---
+  const sessionRows = groupBy(trades, t => t.session, 'Session');
+  const setupRows = groupBy(trades, t => t.setupName || t.model, 'Setup');
+  const timeRows = groupBy(trades, timeBucket, 'Entry time');
+
+  // --- Biggest leak (pick the worst-R group with >=2 trades) ---
+  const candidates = [...sessionRows, ...setupRows, ...timeRows].filter(r => r.n >= 2 && r.r < 0);
+  candidates.sort((a, b) => a.r - b.r);
+  const leak = candidates[0];
+  let leakText;
+  if (leak) {
+    leakText = `${leak.label} "${leak.key}" — ${leak.n} trades, ${fmtR(leak.r)}, ${leak.wr.toFixed(0)}% win rate. That's your worst cluster this week.`;
+  } else if (broken.length && bS.r < 0) {
+    leakText = `Rule-broken trades cost you ${fmtR(bS.r)} across ${broken.length} trades.`;
+  } else {
+    leakText = all.r >= 0 ? 'No clear losing cluster this week.' : 'No single cluster stands out — losses are spread thin.';
+  }
+
+  // --- Focus suggestions, derived from the data ---
+  const focus = [];
+  if (leak) focus.push(`Cut or rework ${leak.label.toLowerCase()} "${leak.key}" until it proves itself on paper.`);
+  const bestGroup = [...sessionRows, ...setupRows].filter(r => r.n >= 2 && r.r > 0).sort((a, b) => b.r - a.r)[0];
+  if (bestGroup) focus.push(`Lean into ${bestGroup.label.toLowerCase()} "${bestGroup.key}" (${bestGroup.n} trades, ${fmtR(bestGroup.r)}).`);
+  if (broken.length) focus.push(`${broken.length} rule-break${broken.length > 1 ? 's' : ''} this week — target zero.`);
+  if (topTags.length) focus.push(`Your most common leak tag was "${topTags[0][0]}" — build a pre-entry check for it.`);
+  if (!focus.length) focus.push('Nothing glaring in the data — keep sample building.');
+
+  const tableRows = rows => rows.length ? `<table class="mini-table" style="margin-top:6px;">
+      <thead><tr><th>${escapeHtml(rows[0].label)}</th><th>N</th><th>R</th><th>WR</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td style="font-size:12px;">${escapeHtml(r.key)}</td>
+        <td style="font-size:12px;">${r.n}</td>
+        <td class="${r.r >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-size:12px;">${fmtR(r.r)}</td>
+        <td style="font-size:12px;">${r.wr.toFixed(0)}%</td>
+      </tr>`).join('')}</tbody></table>` : '';
+
+  const li = arr => arr.length ? `<ul>${arr.map(x => `<li>${x}</li>`).join('')}</ul>` : '<p style="color:var(--text-muted);">Not enough data on the fields you logged.</p>';
+
+  const headline = all.r >= 0
+    ? `Net ${fmtR(all.r)} (${fmtMoney(all.pnl, { forceSign: true })}) across ${all.n} trades at ${all.wr.toFixed(0)}% win rate.`
+    : `Down ${fmtR(all.r)} (${fmtMoney(all.pnl, { forceSign: true })}) across ${all.n} trades at ${all.wr.toFixed(0)}% win rate.`;
+
+  const caveat = all.n < 20
+    ? `Only ${all.n} trade${all.n > 1 ? 's' : ''} this week — treat these as tendencies to watch, not proven edges. Patterns need 30+ trades before they mean much.`
+    : `${all.n} trades is a workable sample, but still one week — check whether these patterns repeat.`;
+
   area.innerHTML = `
-    ${a.headline ? `<div class="analysis-block"><p style="font-size:14px; color:var(--text-primary); font-weight:600;">${escapeHtml(a.headline)}</p></div>` : ''}
-    <div class="analysis-block"><h4>✓ Winners had in common</h4>${list(a.winners_common)}</div>
-    <div class="analysis-block"><h4>✗ Losers had in common</h4>${list(a.losers_common)}</div>
-    ${a.where_r_went ? `<div class="analysis-block"><h4>Where the R went</h4><p>${escapeHtml(a.where_r_went)}</p></div>` : ''}
-    ${a.biggest_leak ? `<div class="analysis-block"><h4>Biggest leak</h4><p style="color:var(--red);">${escapeHtml(a.biggest_leak)}</p></div>` : ''}
-    <div class="analysis-block"><h4>Focus next week</h4>${list(a.focus_next_week)}</div>
-    ${a.sample_caveat ? `<div class="analysis-block"><p style="font-size:11.5px; color:var(--text-muted); font-style:italic;">${escapeHtml(a.sample_caveat)}</p></div>` : ''}
-    <div style="margin-top:8px;"><span class="view-chart-link" onclick="resetApiKey()">Reset API key</span></div>
+    <div class="analysis-block"><p style="font-size:14px; color:var(--text-primary); font-weight:600;">${headline}</p></div>
+    <div class="analysis-block"><h4>✓ Winners had in common (${winners.length})</h4>${li(winTraits)}</div>
+    <div class="analysis-block"><h4>✗ Losers had in common (${losers.length})</h4>${li(loseTraits)}</div>
+    <div class="analysis-block"><h4>Where the R went</h4><p>${whereR}</p></div>
+    <div class="analysis-block"><h4>Biggest leak</h4><p style="color:var(--red);">${escapeHtml(leakText)}</p></div>
+    <div class="analysis-block"><h4>By session</h4>${tableRows(sessionRows)}</div>
+    <div class="analysis-block"><h4>By setup</h4>${tableRows(setupRows)}</div>
+    ${timeRows.length ? `<div class="analysis-block"><h4>By entry time</h4>${tableRows(timeRows)}</div>` : ''}
+    ${broken.length ? `<div class="analysis-block"><h4>Discipline</h4><p>Rule-followed: ${fS.n} trades, ${fmtR(fS.r)}, ${fS.wr.toFixed(0)}% WR<br>Rule-broken: ${bS.n} trades, ${fmtR(bS.r)}, ${bS.wr.toFixed(0)}% WR</p></div>` : ''}
+    <div class="analysis-block"><h4>Focus next week</h4>${li(focus)}</div>
+    <div class="analysis-block"><p style="font-size:11.5px; color:var(--text-muted); font-style:italic;">${escapeHtml(caveat)}</p></div>
   `;
-}
-
-function resetApiKey() {
-  if (confirm('Remove the stored Anthropic API key from this browser?')) {
-    localStorage.removeItem(ANALYSIS_API_KEY);
-    showToast('API key removed');
-  }
 }
 
 document.getElementById('runAnalysisBtn').addEventListener('click', runWeeklyAnalysis);
