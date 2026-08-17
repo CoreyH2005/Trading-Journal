@@ -58,6 +58,11 @@ let state = {
   dailyRating: null,
   dailyTags: [],
   dailyChecks: [],
+  dayViewMode: 'day',
+  dailyRange: 'thisMonth',
+  openDays: [],
+  dayCalMonth: new Date().getMonth(),
+  dayCalYear: new Date().getFullYear(),
   dailyState: { sleep: null, energy: null, focus: null, stress: null },
   dashRange: 'all',
   dashDateFrom: null,
@@ -2101,15 +2106,13 @@ function saveAnalysisToReview() {
 document.getElementById('runAnalysisBtn').addEventListener('click', runWeeklyAnalysis);
 
 /* ============================================
-   DAILY JOURNAL
-   Pre-market plan → post-session review, with an objective process
-   scorecard, state tracking, and an accountability loop that carries
-   yesterday's plan into today.
+   DAILY JOURNAL — Day View feed
+   A scrollable feed of day cards (expand for stats + chart), a month
+   calendar for navigation, and a full reflection note per day.
    ============================================ */
 
 const DAILY_TAGS = ['No setup', 'Patient', 'Disciplined', 'A+ setup', 'FOMO', 'Overtraded', 'Revenge', 'Tired', 'Distracted', 'Rushed', 'Hesitated', 'Moved stop'];
 
-// Objective process checks — these score discipline independently of P&L.
 const PROCESS_CHECKS = [
   { id: 'plan', text: 'Wrote a pre-market plan before the session' },
   { id: 'levels', text: 'Marked key levels / HTF context beforehand' },
@@ -2131,68 +2134,11 @@ const STATE_SCALES = [
 
 function getDailyEntry(date) { return state.dailyEntries.find(d => d.date === date); }
 
-/* ---- chip/checkbox renderers ---- */
-function renderDailyTagChips() {
-  document.getElementById('dailyTagChips').innerHTML = DAILY_TAGS.map(t =>
-    `<div class="chip ${state.dailyTags.includes(t) ? 'selected' : ''}" onclick="toggleDailyTag('${t}')">${t}</div>`
-  ).join('');
-}
-function toggleDailyTag(tag) {
-  if (state.dailyTags.includes(tag)) state.dailyTags = state.dailyTags.filter(t => t !== tag);
-  else state.dailyTags.push(tag);
-  renderDailyTagChips();
-}
-
-function renderStateChips() {
-  STATE_SCALES.forEach(s => {
-    document.getElementById(s.el).innerHTML = s.labels.map((lab, i) =>
-      `<div class="chip ${state.dailyState[s.key] === (i + 1) ? 'selected' : ''}" onclick="setDailyState('${s.key}', ${i + 1})" title="${lab}">${i + 1}</div>`
-    ).join('') + `<span style="font-size:11px; color:var(--text-muted); margin-left:6px; align-self:center;">${state.dailyState[s.key] ? s.labels[state.dailyState[s.key] - 1] : ''}</span>`;
-  });
-}
-function setDailyState(key, val) {
-  state.dailyState[key] = state.dailyState[key] === val ? null : val;
-  renderStateChips();
-}
-
-function renderChecklist() {
-  document.getElementById('dailyChecklist').innerHTML = PROCESS_CHECKS.map(c => `
-    <label class="check-row ${state.dailyChecks.includes(c.id) ? 'checked' : ''}">
-      <input type="checkbox" ${state.dailyChecks.includes(c.id) ? 'checked' : ''} onchange="toggleCheck('${c.id}')">
-      <span>${c.text}</span>
-    </label>`).join('');
-  updateProcessScore();
-}
-function toggleCheck(id) {
-  if (state.dailyChecks.includes(id)) state.dailyChecks = state.dailyChecks.filter(x => x !== id);
-  else state.dailyChecks.push(id);
-  renderChecklist();
-}
-function updateProcessScore() {
-  const n = state.dailyChecks.length, total = PROCESS_CHECKS.length;
-  const pct = Math.round((n / total) * 100);
-  const colour = pct >= 80 ? 'var(--green)' : (pct >= 50 ? 'var(--gold)' : 'var(--red)');
-  document.getElementById('dailyProcessScore').innerHTML =
-    `<span style="color:var(--text-muted);">Process score</span>
-     <span class="process-score-value" style="color:${colour};">${n}/${total} · ${pct}%</span>`;
-}
-
-function setDailyDiscipline(val) {
-  state.dailyDiscipline = val;
-  document.querySelectorAll('#dailyDisciplineChips .chip').forEach(c => c.classList.toggle('selected', c.dataset.discipline === val));
-}
-function setDailyRating(val) {
-  state.dailyRating = val;
-  document.querySelectorAll('#dailyRatingChips .chip').forEach(c => c.classList.toggle('selected', c.dataset.rating === String(val)));
-}
-
-/* ---- habit stats across all entries ---- */
+/* ---------- habit stats ---------- */
 function renderDailyHabitStats() {
   const entries = state.dailyEntries;
-  // Journaling streak, counting back from today/yesterday
   const dates = new Set(entries.map(e => e.date));
-  let streak = 0;
-  let cursor = new Date();
+  let streak = 0, cursor = new Date();
   if (!dates.has(isoOf(cursor))) cursor = addDays(cursor, -1);
   while (dates.has(isoOf(cursor))) { streak++; cursor = addDays(cursor, -1); }
 
@@ -2200,9 +2146,7 @@ function renderDailyHabitStats() {
   const rated = last30.filter(e => e.rating);
   const avgRating = rated.length ? rated.reduce((s, e) => s + e.rating, 0) / rated.length : null;
   const scored = last30.filter(e => e.checks && e.checks.length);
-  const avgProcess = scored.length
-    ? scored.reduce((s, e) => s + (e.checks.length / PROCESS_CHECKS.length) * 100, 0) / scored.length
-    : null;
+  const avgProcess = scored.length ? scored.reduce((s, e) => s + (e.checks.length / PROCESS_CHECKS.length) * 100, 0) / scored.length : null;
   const followed = last30.filter(e => e.discipline === 'yes' || e.discipline === 'mostly').length;
   const withDisc = last30.filter(e => e.discipline && e.discipline !== 'na').length;
   const discPct = withDisc ? (followed / withDisc) * 100 : null;
@@ -2215,182 +2159,308 @@ function renderDailyHabitStats() {
   `;
 }
 
-/* ---- carryover: yesterday's plan ---- */
-function renderCarryover(date) {
-  const el = document.getElementById('dailyCarryover');
-  // find the most recent entry before this date that has a plan
-  const prior = state.dailyEntries
-    .filter(e => e.date < date && e.plan)
-    .sort((a, b) => b.date.localeCompare(a.date))[0];
-  if (!prior) { el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="carryover-card">
-    <div class="carryover-label">Your plan from ${fmtDate(prior.date)} — did you follow it?</div>
-    <div class="carryover-text">${escapeHtml(prior.plan)}</div>
+/* ---------- the day feed ---------- */
+function dailyRangeBounds() {
+  const today = todayISO();
+  switch (state.dailyRange) {
+    case '30d': return { from: isoOf(addDays(new Date(), -29)), to: today };
+    case '90d': return { from: isoOf(addDays(new Date(), -89)), to: today };
+    case 'all': return { from: null, to: null };
+    default: return { from: today.slice(0, 7) + '-01', to: today };
+  }
+}
+
+function renderDayFeed() {
+  const feed = document.getElementById('dayFeed');
+  const { from, to } = dailyRangeBounds();
+  const trades = getLeaderTrades();
+
+  // Every date that has a trade or a journal note within range.
+  const dateSet = new Set();
+  trades.forEach(t => dateSet.add(t.date));
+  state.dailyEntries.forEach(e => dateSet.add(e.date));
+  let dates = [...dateSet].filter(d => (!from || d >= from) && (!to || d <= to));
+
+  if (state.dayViewMode === 'week') return renderWeekFeed(dates, trades);
+
+  dates.sort((a, b) => b.localeCompare(a));
+  if (!dates.length) {
+    feed.innerHTML = `<div class="empty-state"><div class="empty-state-title">Nothing in this range</div><div class="empty-state-sub">Log a trade or write a daily note to see it here.</div></div>`;
+    return;
+  }
+
+  feed.innerHTML = dates.map(date => {
+    const dayTrades = trades.filter(t => t.date === date);
+    const s = computeStats(dayTrades);
+    const entry = getDailyEntry(date);
+    const cls = !dayTrades.length ? 'flat' : (s.netPnl > 0 ? 'win' : (s.netPnl < 0 ? 'loss' : 'flat'));
+    const d = new Date(date + 'T00:00:00');
+    const open = state.openDays.includes(date);
+    return `
+    <div class="day-card ${cls} ${open ? 'open' : ''}" id="daycard_${date}">
+      <div class="day-card-head" onclick="toggleDayCard('${date}')">
+        <span class="day-chev">▶</span>
+        <span class="day-date">${d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>
+        <span class="day-pnl ${dayTrades.length ? (s.netPnl >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}" style="${dayTrades.length ? '' : 'color:var(--text-muted);'}">
+          ${dayTrades.length ? 'Net P&L ' + fmtMoney(s.netPnl, { forceSign: true }) : 'No trades'}
+        </span>
+        <span class="day-head-spacer"></span>
+        <span class="day-head-actions" onclick="event.stopPropagation();">
+          ${entry ? '<span class="day-note-dot" title="Note saved"></span>' : ''}
+          <button class="btn btn-sm btn-ghost" onclick="openDailyNote('${date}')">${entry ? 'View note' : '+ Add note'}</button>
+        </span>
+      </div>
+      <div class="day-card-body" style="${open ? '' : 'display:none;'}">
+        ${dayTrades.length ? `
+        <div class="day-body-grid">
+          <div class="chart-box" style="height:170px;"><canvas id="daychart_${date}"></canvas></div>
+          <div class="day-stat-grid">
+            <div><div class="day-stat-label">Total trades</div><div class="day-stat-value">${s.total}</div></div>
+            <div><div class="day-stat-label">Net R</div><div class="day-stat-value ${s.totalR >= 0 ? 'pnl-pos' : 'pnl-neg'}">${(s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(1)}R</div></div>
+            <div><div class="day-stat-label">Winners / losers</div><div class="day-stat-value">${s.wins} / ${s.losses}</div></div>
+            <div><div class="day-stat-label">Win rate</div><div class="day-stat-value">${s.winRate.toFixed(0)}%</div></div>
+            <div><div class="day-stat-label">Profit factor</div><div class="day-stat-value">${isFinite(s.profitFactor) ? s.profitFactor.toFixed(2) : '—'}</div></div>
+            <div><div class="day-stat-label">Contracts</div><div class="day-stat-value">${dayTrades.reduce((a, t) => a + (parseFloat(t.contracts) || 0), 0)}</div></div>
+            <div><div class="day-stat-label">Rule-broken</div><div class="day-stat-value ${dayTrades.filter(t => t.ruleFollowed === false).length ? 'pnl-neg' : ''}">${dayTrades.filter(t => t.ruleFollowed === false).length}</div></div>
+            <div><div class="day-stat-label">Avg hold</div><div class="day-stat-value">${s.avgHold ? Math.round(s.avgHold) + ' min' : '—'}</div></div>
+          </div>
+        </div>
+        <div style="margin-top:14px;">
+          ${dayTrades.sort((a, b) => (a.entryTime || '').localeCompare(b.entryTime || '')).map(t => {
+            const oc = getOutcome(t);
+            return `<div class="daily-trade-row">
+              <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+                <span class="outcome-pill ${oc}">${oc === 'be' ? 'BE' : oc}</span>
+                <span style="color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${t.entryTime ? escapeHtml(t.entryTime) + ' · ' : ''}${escapeHtml(t.symbol)} ${escapeHtml(t.direction)} · ${escapeHtml(t.setupName || t.model || '—')}</span>
+                ${t.ruleFollowed === false ? '<span class="badge badge-rule-broken">Rule broken</span>' : ''}
+              </div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                ${t.rMultiple != null && t.rMultiple !== '' ? `<span style="color:var(--text-muted); font-family:var(--font-mono); font-size:11.5px;">${parseFloat(t.rMultiple) >= 0 ? '+' : ''}${parseFloat(t.rMultiple)}R</span>` : ''}
+                <span class="${t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-family:var(--font-mono);">${fmtMoney(t.pnl, { forceSign: true })}</span>
+                <button class="icon-btn" onclick="viewTradeDetail('${t.id}')" title="View">${ICONS.view}</button>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>` : `<div class="day-empty">No trades this day — staying flat is still a decision worth journaling.</div>`}
+        ${entry ? renderNotePreview(entry) : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  // draw charts for any open day
+  dates.forEach(date => { if (state.openDays.includes(date)) drawDayChart(date); });
+}
+
+function renderWeekFeed(dates, trades) {
+  const feed = document.getElementById('dayFeed');
+  const weeks = {};
+  dates.forEach(d => {
+    const ws = isoOf(startOfWeek(new Date(d + 'T00:00:00')));
+    (weeks[ws] = weeks[ws] || []).push(d);
+  });
+  const keys = Object.keys(weeks).sort((a, b) => b.localeCompare(a));
+  if (!keys.length) {
+    feed.innerHTML = `<div class="empty-state"><div class="empty-state-title">Nothing in this range</div></div>`;
+    return;
+  }
+  feed.innerHTML = keys.map(ws => {
+    const wStart = new Date(ws + 'T00:00:00'), wEnd = addDays(wStart, 6);
+    const wTrades = trades.filter(t => t.date >= ws && t.date <= isoOf(wEnd));
+    const s = computeStats(wTrades);
+    const notes = state.dailyEntries.filter(e => e.date >= ws && e.date <= isoOf(wEnd)).length;
+    const cls = !wTrades.length ? 'flat' : (s.netPnl > 0 ? 'win' : (s.netPnl < 0 ? 'loss' : 'flat'));
+    return `
+    <div class="day-card ${cls}">
+      <div class="day-card-head" style="cursor:default;">
+        <span class="day-date">${wStart.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – ${wEnd.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+        <span class="day-pnl ${wTrades.length ? (s.netPnl >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}" style="${wTrades.length ? '' : 'color:var(--text-muted);'}">${wTrades.length ? 'Net P&L ' + fmtMoney(s.netPnl, { forceSign: true }) : 'No trades'}</span>
+        <span class="day-head-spacer"></span>
+        <span style="font-size:11.5px; color:var(--text-muted); font-family:var(--font-mono);">${notes} note${notes === 1 ? '' : 's'}</span>
+      </div>
+      <div class="day-card-body">
+        <div class="day-stat-grid" style="padding-top:14px; grid-template-columns:repeat(4,1fr);">
+          <div><div class="day-stat-label">Trades</div><div class="day-stat-value">${s.total}</div></div>
+          <div><div class="day-stat-label">Net R</div><div class="day-stat-value ${s.totalR >= 0 ? 'pnl-pos' : 'pnl-neg'}">${(s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(1)}R</div></div>
+          <div><div class="day-stat-label">Win rate</div><div class="day-stat-value">${s.winRate.toFixed(0)}%</div></div>
+          <div><div class="day-stat-label">Days traded</div><div class="day-stat-value">${new Set(wTrades.map(t => t.date)).size}</div></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderNotePreview(e) {
+  const bits = [];
+  if (e.lesson) bits.push(`<div class="past-daily-block"><div class="past-daily-block-label">Lesson</div><div class="past-daily-block-text" style="color:var(--gold);">${escapeHtml(e.lesson)}</div></div>`);
+  if (e.improve) bits.push(`<div class="past-daily-block"><div class="past-daily-block-label">To improve</div><div class="past-daily-block-text">${escapeHtml(e.improve)}</div></div>`);
+  const meta = [];
+  if (e.checks && e.checks.length) meta.push(`${Math.round((e.checks.length / PROCESS_CHECKS.length) * 100)}% process`);
+  if (e.rating) meta.push(`${e.rating}/5`);
+  if (e.discipline) meta.push({ yes: 'Plan followed', mostly: 'Mostly followed', no: 'Plan broken', na: 'No trades' }[e.discipline]);
+  if (!bits.length && !meta.length) return '';
+  return `<div class="day-note-preview">
+    ${meta.length ? `<div class="trade-entry-badges" style="margin-bottom:8px;">${meta.map(m => `<span class="badge badge-session">${escapeHtml(m)}</span>`).join('')}${(e.tags || []).map(t => `<span class="badge badge-tf">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+    ${bits.join('')}
   </div>`;
 }
 
-/* ---- main render ---- */
-function renderDaily() {
-  if (!state.dailyDate) state.dailyDate = todayISO();
-  const date = state.dailyDate;
+function toggleDayCard(date) {
+  if (state.openDays.includes(date)) state.openDays = state.openDays.filter(d => d !== date);
+  else state.openDays.push(date);
+  renderDayFeed();
+}
 
-  const d = new Date(date + 'T00:00:00');
-  document.getElementById('dailyDateLabel').textContent =
-    d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-    + (date === todayISO() ? ' · today' : '');
-  document.getElementById('dailyDatePicker').value = date;
+function drawDayChart(date) {
+  const ctx = document.getElementById('daychart_' + date);
+  if (!ctx) return;
+  const dayTrades = getLeaderTrades().filter(t => t.date === date)
+    .sort((a, b) => (a.entryTime || '').localeCompare(b.entryTime || ''));
+  let cum = 0;
+  const pts = [{ x: 'Start', y: 0 }];
+  dayTrades.forEach((t, i) => { cum += t.pnl; pts.push({ x: t.entryTime || ('T' + (i + 1)), y: cum }); });
+  if (charts['day_' + date]) charts['day_' + date].destroy();
+  const up = cum >= 0;
+  charts['day_' + date] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: pts.map(p => p.x),
+      datasets: [{
+        data: pts.map(p => p.y),
+        borderColor: up ? '#3ecf8e' : '#ff5c5c',
+        backgroundColor: up ? 'rgba(62,207,142,0.12)' : 'rgba(255,92,92,0.12)',
+        fill: true, tension: 0.3, pointRadius: 2, borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtMoney(c.parsed.y, { forceSign: true }) } } },
+      scales: {
+        x: { ticks: { color: '#5c636b', font: { size: 9 } }, grid: { display: false } },
+        y: { ticks: { color: '#5c636b', font: { size: 9 }, callback: v => fmtMoneyShort(v) }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    }
+  });
+}
 
-  renderDailyHabitStats();
-  renderCarryover(date);
+/* ---------- calendar ---------- */
+function renderDayCalendar() {
+  const y = state.dayCalYear, m = state.dayCalMonth;
+  document.getElementById('dayCalLabel').textContent = new Date(y, m, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const trades = getLeaderTrades();
+  const byDay = {};
+  trades.forEach(t => { byDay[t.date] = (byDay[t.date] || 0) + t.pnl; });
+  const noteDays = new Set(state.dailyEntries.map(e => e.date));
 
-  const dayTrades = getLeaderTrades().filter(t => t.date === date);
-  const stats = computeStats(dayTrades);
-  const broke = dayTrades.filter(t => t.ruleFollowed === false).length;
-
-  document.getElementById('dailySummary').innerHTML = `
-    <div class="stat-card"><div class="stat-label">Trades</div><div class="stat-value">${dayTrades.length}</div>${broke ? `<div class="stat-delta negative">${broke} rule-broken</div>` : ''}</div>
-    <div class="stat-card"><div class="stat-label">Net P&L</div><div class="stat-value ${stats.netPnl >= 0 ? 'positive' : 'negative'}">${dayTrades.length ? fmtMoney(stats.netPnl, { forceSign: true }) : '—'}</div></div>
-    <div class="stat-card"><div class="stat-label">Net R</div><div class="stat-value ${stats.totalR >= 0 ? 'positive' : 'negative'}">${dayTrades.length ? (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(1) + 'R' : '—'}</div></div>
-    <div class="stat-card"><div class="stat-label">Win rate</div><div class="stat-value">${dayTrades.length ? stats.winRate.toFixed(0) + '%' : '—'}</div></div>
-  `;
-
-  const tl = document.getElementById('dailyTradesList');
-  if (!dayTrades.length) {
-    tl.innerHTML = `<div style="font-size:12.5px; color:var(--text-muted); padding:8px 0;">No trades logged on this day. That's still worth journaling — staying flat is a decision.</div>`;
-  } else {
-    tl.innerHTML = dayTrades.sort((a, b) => (a.entryTime || '').localeCompare(b.entryTime || '')).map(t => {
-      const oc = getOutcome(t);
-      return `<div class="daily-trade-row">
-        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
-          <span class="outcome-pill ${oc}" style="flex:0 0 auto;">${oc === 'be' ? 'BE' : oc}</span>
-          <span style="color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-            ${t.entryTime ? escapeHtml(t.entryTime) + ' · ' : ''}${escapeHtml(t.symbol)} ${escapeHtml(t.direction)} · ${escapeHtml(t.setupName || t.model || '—')}
-          </span>
-          ${t.ruleFollowed === false ? '<span class="badge badge-rule-broken" style="flex:0 0 auto;">Rule broken</span>' : ''}
-        </div>
-        <div style="display:flex; align-items:center; gap:10px; flex:0 0 auto;">
-          ${t.rMultiple != null && t.rMultiple !== '' ? `<span style="color:var(--text-muted); font-family:var(--font-mono); font-size:11.5px;">${parseFloat(t.rMultiple) >= 0 ? '+' : ''}${parseFloat(t.rMultiple)}R</span>` : ''}
-          <span class="${t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-family:var(--font-mono);">${fmtMoney(t.pnl, { forceSign: true })}</span>
-          <button class="icon-btn" onclick="viewTradeDetail('${t.id}')" title="View">${ICONS.view}</button>
-        </div>
-      </div>`;
-    }).join('');
+  const first = new Date(y, m, 1);
+  const offset = (first.getDay() + 6) % 7;
+  const days = new Date(y, m + 1, 0).getDate();
+  const today = todayISO();
+  let html = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => `<div class="calendar-dow">${d}</div>`).join('');
+  for (let i = 0; i < offset; i++) html += `<div class="calendar-day empty"></div>`;
+  for (let dd = 1; dd <= days; dd++) {
+    const ds = `${y}-${String(m + 1).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+    const pnl = byDay[ds];
+    let cls = 'calendar-day clickable';
+    if (ds === today) cls += ' today';
+    if (pnl != null) cls += pnl >= 0 ? ' pos has-trades' : ' neg has-trades';
+    if (noteDays.has(ds)) cls += ' has-note';
+    html += `<div class="${cls}" onclick="jumpToDay('${ds}')">
+      <div class="calendar-day-num">${dd}</div>
+      ${pnl != null ? `<div class="calendar-day-pnl">${fmtMoneyShort(pnl)}</div>` : ''}
+    </div>`;
   }
+  document.getElementById('dayCalGrid').innerHTML = html;
+}
 
+function jumpToDay(date) {
+  const hasSomething = getLeaderTrades().some(t => t.date === date) || getDailyEntry(date);
+  if (!hasSomething) { openDailyNote(date); return; }
+  if (!state.openDays.includes(date)) state.openDays.push(date);
+  renderDayFeed();
+  const el = document.getElementById('daycard_' + date);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  else openDailyNote(date);
+}
+
+/* ---------- note modal ---------- */
+function renderDailyTagChips() {
+  document.getElementById('dailyTagChips').innerHTML = DAILY_TAGS.map(t =>
+    `<div class="chip ${state.dailyTags.includes(t) ? 'selected' : ''}" onclick="toggleDailyTag('${t}')">${t}</div>`).join('');
+}
+function toggleDailyTag(tag) {
+  state.dailyTags = state.dailyTags.includes(tag) ? state.dailyTags.filter(t => t !== tag) : state.dailyTags.concat(tag);
+  renderDailyTagChips();
+}
+function renderStateChips() {
+  STATE_SCALES.forEach(s => {
+    document.getElementById(s.el).innerHTML = s.labels.map((lab, i) =>
+      `<div class="chip ${state.dailyState[s.key] === (i + 1) ? 'selected' : ''}" onclick="setDailyState('${s.key}', ${i + 1})" title="${lab}">${i + 1}</div>`
+    ).join('') + `<span style="font-size:11px; color:var(--text-muted); margin-left:6px; align-self:center;">${state.dailyState[s.key] ? s.labels[state.dailyState[s.key] - 1] : ''}</span>`;
+  });
+}
+function setDailyState(key, val) { state.dailyState[key] = state.dailyState[key] === val ? null : val; renderStateChips(); }
+function renderChecklist() {
+  document.getElementById('dailyChecklist').innerHTML = PROCESS_CHECKS.map(c => `
+    <label class="check-row ${state.dailyChecks.includes(c.id) ? 'checked' : ''}">
+      <input type="checkbox" ${state.dailyChecks.includes(c.id) ? 'checked' : ''} onchange="toggleCheck('${c.id}')">
+      <span>${c.text}</span></label>`).join('');
+  updateProcessScore();
+}
+function toggleCheck(id) {
+  state.dailyChecks = state.dailyChecks.includes(id) ? state.dailyChecks.filter(x => x !== id) : state.dailyChecks.concat(id);
+  renderChecklist();
+}
+function updateProcessScore() {
+  const n = state.dailyChecks.length, total = PROCESS_CHECKS.length, pct = Math.round((n / total) * 100);
+  const colour = pct >= 80 ? 'var(--green)' : (pct >= 50 ? 'var(--gold)' : 'var(--red)');
+  document.getElementById('dailyProcessScore').innerHTML =
+    `<span style="color:var(--text-muted);">Process score</span><span class="process-score-value" style="color:${colour};">${n}/${total} · ${pct}%</span>`;
+}
+function setDailyDiscipline(val) {
+  state.dailyDiscipline = val;
+  document.querySelectorAll('#dailyDisciplineChips .chip').forEach(c => c.classList.toggle('selected', c.dataset.discipline === val));
+}
+function setDailyRating(val) {
+  state.dailyRating = val;
+  document.querySelectorAll('#dailyRatingChips .chip').forEach(c => c.classList.toggle('selected', c.dataset.rating === String(val)));
+}
+function renderCarryover(date) {
+  const el = document.getElementById('dailyCarryover');
+  const prior = state.dailyEntries.filter(e => e.date < date && e.plan).sort((a, b) => b.date.localeCompare(a.date))[0];
+  el.innerHTML = prior ? `<div class="carryover-card">
+    <div class="carryover-label">Your plan from ${fmtDate(prior.date)} — did you follow it?</div>
+    <div class="carryover-text">${escapeHtml(prior.plan)}</div></div>` : '';
+}
+
+function openDailyNote(date) {
+  state.dailyDate = date;
   const e = getDailyEntry(date);
+  const d = new Date(date + 'T00:00:00');
+  document.getElementById('dailyNoteTitle').textContent = d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const dayTrades = getLeaderTrades().filter(t => t.date === date);
+  const s = computeStats(dayTrades);
+  document.getElementById('dailyNoteSub').textContent = dayTrades.length
+    ? `${dayTrades.length} trade${dayTrades.length > 1 ? 's' : ''} · ${fmtMoney(s.netPnl, { forceSign: true })} · ${(s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(1)}R`
+    : 'No trades this day';
+
   const val = (id, v) => document.getElementById(id).value = v || '';
   val('dailyBias', e && e.bias); val('dailySessionFocus', e && e.sessionFocus);
   val('dailyLevels', e && e.levels); val('dailyCriteria', e && e.criteria);
   val('dailyMarket', e && e.market); val('dailyGood', e && e.good);
   val('dailyImprove', e && e.improve); val('dailyLesson', e && e.lesson);
   val('dailyPlan', e && e.plan); val('dailyMindset', e && e.mindset);
-
   state.dailyTags = e && e.tags ? e.tags.slice() : [];
   state.dailyChecks = e && e.checks ? e.checks.slice() : [];
   state.dailyState = e && e.stateScores ? Object.assign({}, e.stateScores) : { sleep: null, energy: null, focus: null, stress: null };
   setDailyDiscipline(e ? (e.discipline || null) : null);
   setDailyRating(e ? (e.rating || null) : null);
-  renderDailyTagChips(); renderChecklist(); renderStateChips();
-
-  document.getElementById('dailySavedHint').textContent = e
-    ? 'Saved entry loaded — edits overwrite it.'
-    : 'No entry saved for this day yet.';
-
-  renderPastDaily();
+  renderDailyTagChips(); renderChecklist(); renderStateChips(); renderCarryover(date);
+  document.getElementById('deleteDailyBtn').style.display = e ? '' : 'none';
+  openModal('dailyNoteOverlay');
 }
-
-/* ---- past entries ---- */
-function renderPastDaily() {
-  const list = document.getElementById('pastDailyList');
-  const q = (document.getElementById('dailySearch').value || '').toLowerCase();
-  const filter = document.getElementById('dailyFilterDiscipline').value;
-
-  let sorted = state.dailyEntries.slice().sort((a, b) => b.date.localeCompare(a.date));
-  if (q) {
-    sorted = sorted.filter(e => [e.mindset, e.market, e.good, e.improve, e.lesson, e.plan, e.levels, e.criteria, (e.tags || []).join(' ')]
-      .filter(Boolean).join(' ').toLowerCase().includes(q));
-  }
-  if (filter === 'traded') sorted = sorted.filter(e => getLeaderTrades().some(t => t.date === e.date));
-  else if (filter === 'flat') sorted = sorted.filter(e => !getLeaderTrades().some(t => t.date === e.date));
-  else if (filter === 'no') sorted = sorted.filter(e => e.discipline === 'no');
-
-  if (!sorted.length) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-state-title">${state.dailyEntries.length ? 'No entries match' : 'No daily entries yet'}</div><div class="empty-state-sub">${state.dailyEntries.length ? 'Try a different search or filter.' : 'Write your first reflection above — trading day or not.'}</div></div>`;
-    return;
-  }
-
-  const DISC_LABEL = { yes: 'Plan followed', mostly: 'Mostly followed', no: 'Plan broken', na: 'No trades' };
-  list.innerHTML = sorted.map(e => {
-    const dayTrades = getLeaderTrades().filter(t => t.date === e.date);
-    const s = computeStats(dayTrades);
-    const d = new Date(e.date + 'T00:00:00');
-    const meta = [];
-    meta.push(dayTrades.length
-      ? `${fmtMoney(s.netPnl, { forceSign: true })} · ${(s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(1)}R · ${dayTrades.length} trade${dayTrades.length > 1 ? 's' : ''}`
-      : 'No trades');
-    if (e.checks && e.checks.length) meta.push(`${Math.round((e.checks.length / PROCESS_CHECKS.length) * 100)}% process`);
-    if (e.rating) meta.push(`${e.rating}/5`);
-    const st = e.stateScores || {};
-    const stateBits = ['sleep', 'energy', 'focus', 'stress'].filter(k => st[k]).map(k => `${k} ${st[k]}`);
-    return `
-    <div class="past-daily-card">
-      <div class="past-daily-header">
-        <div class="past-daily-date">${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
-        <div class="past-daily-meta">${meta.join(' · ')}</div>
-      </div>
-      ${(e.discipline || e.bias || (e.tags || []).length) ? `<div class="trade-entry-badges" style="margin-bottom:10px;">
-        ${e.discipline ? `<span class="badge ${e.discipline === 'no' ? 'badge-rule-broken' : 'badge-session'}">${DISC_LABEL[e.discipline] || e.discipline}</span>` : ''}
-        ${e.bias ? `<span class="badge badge-model">${escapeHtml(e.bias)}</span>` : ''}
-        ${(e.tags || []).map(t => `<span class="badge badge-tf">${escapeHtml(t)}</span>`).join('')}
-      </div>` : ''}
-      ${stateBits.length ? `<div class="past-daily-block"><div class="past-daily-block-label">State</div><div class="past-daily-block-text" style="font-family:var(--font-mono); font-size:11.5px;">${stateBits.join('  ·  ')}</div></div>` : ''}
-      ${e.criteria ? `<div class="past-daily-block"><div class="past-daily-block-label">Plan / A+ criteria</div><div class="past-daily-block-text">${escapeHtml(e.criteria)}</div></div>` : ''}
-      ${e.market ? `<div class="past-daily-block"><div class="past-daily-block-label">What happened</div><div class="past-daily-block-text">${escapeHtml(e.market)}</div></div>` : ''}
-      ${e.good ? `<div class="past-daily-block"><div class="past-daily-block-label">Did well</div><div class="past-daily-block-text">${escapeHtml(e.good)}</div></div>` : ''}
-      ${e.improve ? `<div class="past-daily-block"><div class="past-daily-block-label">To improve</div><div class="past-daily-block-text">${escapeHtml(e.improve)}</div></div>` : ''}
-      ${e.lesson ? `<div class="past-daily-block"><div class="past-daily-block-label">Lesson</div><div class="past-daily-block-text" style="color:var(--gold);">${escapeHtml(e.lesson)}</div></div>` : ''}
-      ${e.plan ? `<div class="past-daily-block"><div class="past-daily-block-label">Next day plan</div><div class="past-daily-block-text">${escapeHtml(e.plan)}</div></div>` : ''}
-      <div style="margin-top:10px; display:flex; gap:8px;">
-        <button class="btn btn-sm btn-ghost" onclick="openDailyDate('${e.date}')">Open</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteDailyEntry('${e.date}')">Delete</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function openDailyDate(date) {
-  state.dailyDate = date;
-  renderDaily();
-  document.getElementById('page-daily').scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-function deleteDailyEntry(date) {
-  if (!confirm('Delete the daily entry for ' + fmtDate(date) + '?')) return;
-  state.dailyEntries = state.dailyEntries.filter(e => e.date !== date);
-  saveDaily();
-  renderDaily();
-}
-
-/* ---- events ---- */
-document.getElementById('dailyPrevBtn').addEventListener('click', () => {
-  state.dailyDate = isoOf(addDays(new Date(state.dailyDate + 'T00:00:00'), -1)); renderDaily();
-});
-document.getElementById('dailyNextBtn').addEventListener('click', () => {
-  state.dailyDate = isoOf(addDays(new Date(state.dailyDate + 'T00:00:00'), 1)); renderDaily();
-});
-document.getElementById('dailyTodayBtn').addEventListener('click', () => { state.dailyDate = todayISO(); renderDaily(); });
-document.getElementById('dailyDatePicker').addEventListener('change', function () {
-  if (this.value) { state.dailyDate = this.value; renderDaily(); }
-});
-document.querySelectorAll('#dailyDisciplineChips .chip').forEach(c =>
-  c.addEventListener('click', () => setDailyDiscipline(c.dataset.discipline)));
-document.querySelectorAll('#dailyRatingChips .chip').forEach(c =>
-  c.addEventListener('click', () => setDailyRating(parseInt(c.dataset.rating, 10))));
-document.getElementById('dailySearch').addEventListener('input', renderPastDaily);
-document.getElementById('dailyFilterDiscipline').addEventListener('change', renderPastDaily);
 
 document.getElementById('copyPrevPlanBtn').addEventListener('click', () => {
-  const prior = state.dailyEntries.filter(e => e.date < state.dailyDate && e.plan)
-    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  const prior = state.dailyEntries.filter(e => e.date < state.dailyDate && e.plan).sort((a, b) => b.date.localeCompare(a.date))[0];
   if (!prior) { showToast('No previous plan found'); return; }
   const box = document.getElementById('dailyCriteria');
   box.value = box.value ? box.value + '\n' + prior.plan : prior.plan;
@@ -2401,31 +2471,60 @@ document.getElementById('saveDailyBtn').addEventListener('click', () => {
   const date = state.dailyDate;
   const g = id => document.getElementById(id).value.trim();
   const data = {
-    date,
-    bias: g('dailyBias'), sessionFocus: g('dailySessionFocus'),
-    levels: g('dailyLevels'), criteria: g('dailyCriteria'),
-    market: g('dailyMarket'), good: g('dailyGood'), improve: g('dailyImprove'),
-    lesson: g('dailyLesson'), plan: g('dailyPlan'), mindset: g('dailyMindset'),
+    date, bias: g('dailyBias'), sessionFocus: g('dailySessionFocus'),
+    levels: g('dailyLevels'), criteria: g('dailyCriteria'), market: g('dailyMarket'),
+    good: g('dailyGood'), improve: g('dailyImprove'), lesson: g('dailyLesson'),
+    plan: g('dailyPlan'), mindset: g('dailyMindset'),
     discipline: state.dailyDiscipline, rating: state.dailyRating,
     tags: state.dailyTags.slice(), checks: state.dailyChecks.slice(),
     stateScores: Object.assign({}, state.dailyState)
   };
-  const hasContent = Object.values(data).some(v =>
-    (typeof v === 'string' && v && v !== date) ||
-    (Array.isArray(v) && v.length) ||
-    (typeof v === 'number') ||
-    (v && typeof v === 'object' && Object.values(v).some(x => x))
-  );
+  const hasContent = Object.entries(data).some(([k, v]) => k !== 'date' && (
+    (typeof v === 'string' && v) || (Array.isArray(v) && v.length) || (typeof v === 'number') ||
+    (v && typeof v === 'object' && Object.values(v).some(x => x))));
   if (!hasContent) { showToast('Nothing to save yet'); return; }
   const existing = getDailyEntry(date);
   if (existing) Object.assign(existing, data);
   else { data.id = uid(); state.dailyEntries.push(data); }
   saveDaily();
-  renderDailyHabitStats();
-  renderPastDaily();
-  document.getElementById('dailySavedHint').textContent = 'Saved.';
-  showToast('Daily entry saved');
+  closeModal('dailyNoteOverlay');
+  renderDaily();
+  showToast('Daily note saved');
 });
+
+document.getElementById('deleteDailyBtn').addEventListener('click', () => {
+  if (!confirm('Delete the note for ' + fmtDate(state.dailyDate) + '?')) return;
+  state.dailyEntries = state.dailyEntries.filter(e => e.date !== state.dailyDate);
+  saveDaily();
+  closeModal('dailyNoteOverlay');
+  renderDaily();
+  showToast('Note deleted');
+});
+
+/* ---------- events ---------- */
+document.querySelectorAll('.seg-btn[data-dayview]').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.seg-btn[data-dayview]').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  state.dayViewMode = b.dataset.dayview;
+  renderDayFeed();
+}));
+document.getElementById('dailyRangeSelect').addEventListener('change', function () {
+  state.dailyRange = this.value; renderDayFeed();
+});
+document.getElementById('dayCalPrev').addEventListener('click', () => {
+  state.dayCalMonth--; if (state.dayCalMonth < 0) { state.dayCalMonth = 11; state.dayCalYear--; }
+  renderDayCalendar();
+});
+document.getElementById('dayCalNext').addEventListener('click', () => {
+  state.dayCalMonth++; if (state.dayCalMonth > 11) { state.dayCalMonth = 0; state.dayCalYear++; }
+  renderDayCalendar();
+});
+
+function renderDaily() {
+  renderDailyHabitStats();
+  renderDayFeed();
+  renderDayCalendar();
+}
 
 
 /* ---------------- Modal helpers ---------------- */

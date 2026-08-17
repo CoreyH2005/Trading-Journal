@@ -237,44 +237,72 @@
     <div class="page-header">
       <div>
         <div class="page-title">Daily journal</div>
-        <div class="page-sub" id="dailyDateLabel">—</div>
+        <div class="page-sub">Every day reviewed — traded or not</div>
       </div>
       <div class="page-actions">
-        <button class="btn btn-ghost btn-sm" id="dailyPrevBtn">‹</button>
-        <input type="date" id="dailyDatePicker">
-        <button class="btn btn-ghost btn-sm" id="dailyNextBtn">›</button>
-        <button class="btn btn-ghost btn-sm" id="dailyTodayBtn">Today</button>
+        <div class="seg-toggle">
+          <button class="seg-btn active" data-dayview="day">Day</button>
+          <button class="seg-btn" data-dayview="week">Week</button>
+        </div>
+        <select id="dailyRangeSelect">
+          <option value="thisMonth">This month</option>
+          <option value="30d">Last 30 days</option>
+          <option value="90d">Last 90 days</option>
+          <option value="all">All time</option>
+        </select>
       </div>
     </div>
 
-    <!-- Journaling habit stats -->
     <div class="daily-summary" id="dailyHabitStats"></div>
 
-    <!-- Accountability: yesterday's plan -->
-    <div id="dailyCarryover"></div>
+    <div class="dayview-layout">
+      <div id="dayFeed"></div>
 
-    <!-- Day performance -->
-    <div class="daily-summary" id="dailySummary"></div>
+      <div class="dayview-side">
+        <div class="card">
+          <div class="calendar-nav" style="margin-bottom:10px;">
+            <button class="btn btn-sm btn-ghost" id="dayCalPrev">‹</button>
+            <div class="calendar-month-label" id="dayCalLabel"></div>
+            <button class="btn btn-sm btn-ghost" id="dayCalNext">›</button>
+          </div>
+          <div class="calendar-grid" id="dayCalGrid"></div>
+          <div class="cal-legend">
+            <span><i class="dot-win"></i> Profit</span>
+            <span><i class="dot-loss"></i> Loss</span>
+            <span><i class="dot-note"></i> Journalled</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-    <div class="daily-columns">
-      <div>
-        <!-- PRE-MARKET -->
-        <div class="card daily-phase" style="margin-bottom:16px;">
+  <!-- ===== DAILY NOTE MODAL ===== -->
+  <div class="modal-overlay" id="dailyNoteOverlay">
+    <div class="modal" style="max-width:900px;">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="dailyNoteTitle">Daily note</div>
+          <div class="card-sub" id="dailyNoteSub"></div>
+        </div>
+        <button class="icon-btn" data-close-modal="dailyNoteOverlay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      </div>
+
+      <div id="dailyCarryover"></div>
+
+      <div class="note-columns">
+        <div>
           <div class="phase-header">
             <div>
               <div class="card-title">① Pre-market plan</div>
-              <div class="card-sub">Written before the session — this is what you commit to</div>
+              <div class="card-sub">Written before the session — what you commit to</div>
             </div>
-            <button class="btn btn-sm btn-ghost" id="copyPrevPlanBtn" title="Pull in yesterday's 'tomorrow plan'">↓ Use yesterday's plan</button>
+            <button class="btn btn-sm btn-ghost" id="copyPrevPlanBtn">↓ Yesterday's plan</button>
           </div>
-
           <div class="form-grid" style="margin-bottom:14px;">
             <div class="form-field">
               <label>Daily bias</label>
               <select id="dailyBias">
-                <option value="">—</option>
-                <option value="Bullish">Bullish</option>
-                <option value="Bearish">Bearish</option>
+                <option value="">—</option><option>Bullish</option><option>Bearish</option>
                 <option value="Neutral / range">Neutral / range</option>
                 <option value="No bias — stand aside">No bias — stand aside</option>
               </select>
@@ -282,109 +310,70 @@
             <div class="form-field">
               <label>Session focus</label>
               <select id="dailySessionFocus">
-                <option value="">—</option>
-                <option value="Asia">Asia</option>
-                <option value="London">London</option>
-                <option value="NY AM">NY AM</option>
-                <option value="NY PM">NY PM</option>
+                <option value="">—</option><option>Asia</option><option>London</option>
+                <option value="NY AM">NY AM</option><option value="NY PM">NY PM</option>
                 <option value="No trade day">No trade day</option>
               </select>
             </div>
           </div>
-
           <div class="review-form-section">
             <label>Key levels &amp; narrative</label>
-            <div class="hint">PDH/PDL, liquidity pools, HTF context, news/events</div>
-            <textarea id="dailyLevels" placeholder="e.g. PDH 23,480 / PDL 23,310. Asia range tight. Looking for a sweep of PDL into NY AM. CPI at 13:30..."></textarea>
+            <div class="hint">PDH/PDL, liquidity pools, HTF context, news</div>
+            <textarea id="dailyLevels" placeholder="e.g. PDH 23,480 / PDL 23,310. Looking for a sweep of PDL into NY AM..."></textarea>
           </div>
-
-          <div class="review-form-section" style="margin-bottom:0;">
-            <label>My A+ setup today — what must be true to take it</label>
+          <div class="review-form-section">
+            <label>My A+ setup today</label>
             <div class="hint">Write it now so you can't rationalise later</div>
-            <textarea id="dailyCriteria" placeholder="e.g. Sweep of PDL, then displacement up with an FVG left behind, entry on the iFVG flip in discount. AM only."></textarea>
+            <textarea id="dailyCriteria" placeholder="e.g. Sweep of PDL, displacement up with FVG, entry on iFVG flip in discount. AM only."></textarea>
           </div>
-        </div>
 
-        <!-- POST-SESSION -->
-        <div class="card daily-phase">
-          <div class="phase-header">
+          <div class="phase-header" style="margin-top:20px;">
             <div>
               <div class="card-title">② Post-session review</div>
-              <div class="card-sub">Traded or not — this is where the day gets processed</div>
+              <div class="card-sub">Traded or not — process the day</div>
             </div>
           </div>
-
           <div class="review-form-section">
             <label>What actually happened</label>
-            <div class="hint">What price did, and whether your plan matched reality</div>
-            <textarea id="dailyMarket" placeholder="e.g. Asia ranged tight, NY AM swept the PDL then reversed exactly as planned. Took the iFVG entry..."></textarea>
+            <textarea id="dailyMarket" placeholder="e.g. NY AM swept the PDL then reversed exactly as planned..."></textarea>
           </div>
-
           <div class="review-form-section">
             <label>What I did well</label>
-            <textarea id="dailyGood" placeholder="e.g. Sat on my hands when there was no setup. Waited for the candle close..."></textarea>
+            <textarea id="dailyGood" placeholder="e.g. Sat on my hands when there was no setup..."></textarea>
           </div>
-
           <div class="review-form-section">
             <label>What to improve</label>
-            <textarea id="dailyImprove" placeholder="e.g. Was watching too many charts, got distracted from my main pair..."></textarea>
+            <textarea id="dailyImprove" placeholder="e.g. Watching too many charts, got distracted..."></textarea>
           </div>
-
           <div class="review-form-section">
             <label>Lesson / takeaway</label>
-            <div class="hint">The one thing worth remembering from today</div>
-            <textarea id="dailyLesson" placeholder="e.g. No setup is a position. A flat day protecting capital is a good day..."></textarea>
+            <textarea id="dailyLesson" placeholder="e.g. No setup is a position..."></textarea>
           </div>
-
           <div class="review-form-section" style="margin-bottom:0;">
             <label>Tomorrow's plan</label>
-            <div class="hint">This gets shown to you at the top of tomorrow's entry</div>
-            <textarea id="dailyPlan" placeholder="e.g. Watch for a sweep of today's high into the NY AM window. AM only, max 2 trades..."></textarea>
+            <div class="hint">Shown at the top of tomorrow's note</div>
+            <textarea id="dailyPlan" placeholder="e.g. AM only, max 2 trades. Watch for a sweep of today's high..."></textarea>
           </div>
         </div>
-      </div>
 
-      <div>
-        <!-- PROCESS SCORECARD -->
-        <div class="card" style="margin-bottom:16px;">
+        <div>
           <div class="card-title" style="margin-bottom:4px;">Process scorecard</div>
-          <div class="card-sub" style="margin-bottom:14px;">Objective checks — score the process, not the P&amp;L</div>
+          <div class="card-sub" style="margin-bottom:12px;">Objective checks — score the process, not the P&amp;L</div>
           <div id="dailyChecklist"></div>
           <div class="process-score" id="dailyProcessScore"></div>
-        </div>
 
-        <!-- STATE -->
-        <div class="card" style="margin-bottom:16px;">
-          <div class="card-title" style="margin-bottom:4px;">State &amp; condition</div>
-          <div class="card-sub" style="margin-bottom:14px;">Track this and you'll see how it correlates with your results</div>
-
-          <div class="state-row">
-            <label>Sleep</label>
-            <div class="chip-select" id="dailySleepChips"></div>
-          </div>
-          <div class="state-row">
-            <label>Energy</label>
-            <div class="chip-select" id="dailyEnergyChips"></div>
-          </div>
-          <div class="state-row">
-            <label>Focus</label>
-            <div class="chip-select" id="dailyFocusChips"></div>
-          </div>
-          <div class="state-row">
-            <label>Stress</label>
-            <div class="chip-select" id="dailyStressChips"></div>
-          </div>
-
+          <div class="card-title" style="margin:20px 0 4px;">State &amp; condition</div>
+          <div class="card-sub" style="margin-bottom:12px;">Correlate this with your results over time</div>
+          <div class="state-row"><label>Sleep</label><div class="chip-select" id="dailySleepChips"></div></div>
+          <div class="state-row"><label>Energy</label><div class="chip-select" id="dailyEnergyChips"></div></div>
+          <div class="state-row"><label>Focus</label><div class="chip-select" id="dailyFocusChips"></div></div>
+          <div class="state-row"><label>Stress</label><div class="chip-select" id="dailyStressChips"></div></div>
           <div class="review-form-section" style="margin:14px 0 0;">
             <label>Mood / mindset notes</label>
-            <textarea id="dailyMindset" placeholder="e.g. Slept badly, felt rushed at the open. Calmed down after the first hour..." style="min-height:70px;"></textarea>
+            <textarea id="dailyMindset" placeholder="e.g. Slept badly, felt rushed at the open..." style="min-height:70px;"></textarea>
           </div>
-        </div>
 
-        <!-- RATING -->
-        <div class="card" style="margin-bottom:16px;">
-          <div class="card-title" style="margin-bottom:4px;">Day rating</div>
-          <div class="card-sub" style="margin-bottom:14px;">Your own read on execution</div>
+          <div class="card-title" style="margin:20px 0 4px;">Day rating</div>
           <div class="review-form-section">
             <label>Did you follow your plan?</label>
             <div class="chip-select" id="dailyDisciplineChips">
@@ -397,10 +386,8 @@
           <div class="review-form-section">
             <label>Execution rating (1–5)</label>
             <div class="chip-select" id="dailyRatingChips">
-              <div class="chip" data-rating="1">1</div>
-              <div class="chip" data-rating="2">2</div>
-              <div class="chip" data-rating="3">3</div>
-              <div class="chip" data-rating="4">4</div>
+              <div class="chip" data-rating="1">1</div><div class="chip" data-rating="2">2</div>
+              <div class="chip" data-rating="3">3</div><div class="chip" data-rating="4">4</div>
               <div class="chip" data-rating="5">5</div>
             </div>
           </div>
@@ -409,37 +396,14 @@
             <div class="chip-select" id="dailyTagChips"></div>
           </div>
         </div>
+      </div>
 
-        <!-- TRADES -->
-        <div class="card">
-          <div class="card-title" style="margin-bottom:4px;">Trades this day</div>
-          <div class="card-sub" style="margin-bottom:14px;">Pulled from your leader account automatically</div>
-          <div id="dailyTradesList"></div>
-        </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger" id="deleteDailyBtn">Delete note</button>
+        <button class="btn btn-primary" id="saveDailyBtn">Save note</button>
       </div>
     </div>
-
-    <div style="margin-top:16px; display:flex; gap:10px; align-items:center;">
-      <button class="btn btn-primary" id="saveDailyBtn">Save daily entry</button>
-      <span id="dailySavedHint" style="font-size:11.5px; color:var(--text-muted);"></span>
-    </div>
-
-    <div style="margin-top:26px;">
-      <div class="page-header" style="margin-bottom:12px;">
-        <div class="card-title">Past entries</div>
-        <div class="page-actions">
-          <input type="text" id="dailySearch" placeholder="Search entries...">
-          <select id="dailyFilterDiscipline">
-            <option value="">All days</option>
-            <option value="traded">Traded days</option>
-            <option value="flat">No-trade days</option>
-            <option value="no">Plan broken</option>
-          </select>
-        </div>
-      </div>
-      <div id="pastDailyList"></div>
-    </div>
-  </section>
+  </div>
 
 
   <!-- ===== REVIEW ===== -->
