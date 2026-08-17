@@ -289,7 +289,96 @@
 
       <div id="dailyCarryover"></div>
 
-      <div class="note-columns">
+      <div class="daytype-bar">
+        <span class="daytype-label">Day type</span>
+        <div class="chip-select" id="dayTypeChips">
+          <div class="chip" data-daytype="traded">Traded</div>
+          <div class="chip" data-daytype="notrade">No-trade day</div>
+          <div class="chip" data-daytype="backtest">Backtest / study</div>
+        </div>
+      </div>
+
+      <!-- NO-TRADE / BACKTEST PANEL -->
+      <div id="noTradePanel" class="hidden">
+        <div class="note-columns">
+          <div>
+            <div class="phase-header">
+              <div>
+                <div class="card-title" id="noTradeTitle">No-trade day</div>
+                <div class="card-sub" id="noTradeSub">Why you stayed flat — and what you saw</div>
+              </div>
+            </div>
+
+            <div class="review-form-section">
+              <label>Why no trade?</label>
+              <div class="chip-select" id="noTradeReasonChips"></div>
+            </div>
+
+            <div class="review-form-section">
+              <label>What the market did</label>
+              <div class="hint">The setup that did or didn't form — worth recording either way</div>
+              <textarea id="ntMarket" placeholder="e.g. Asia ranged, NY AM never swept the PDL so my model never triggered. Price chopped around equilibrium all session."></textarea>
+            </div>
+
+            <div class="review-form-section">
+              <label>Setups I studied / backtested</label>
+              <div class="hint">Which model, how many examples, what you were testing</div>
+              <textarea id="ntStudied" placeholder="e.g. Ran 20 iFVG examples on replay from July. Testing whether waiting for the 1m candle close improves win rate."></textarea>
+            </div>
+
+            <div class="review-form-section" style="margin-bottom:0;">
+              <label>What I learned</label>
+              <textarea id="ntLearned" placeholder="e.g. 14/20 of the losers were entries before the displacement candle closed. Confirms the close-first rule."></textarea>
+            </div>
+          </div>
+
+          <div>
+            <div class="card-title" style="margin-bottom:4px;">Backtest tally</div>
+            <div class="card-sub" style="margin-bottom:12px;">Optional — log replay results so they build up over time</div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label>Setups reviewed</label>
+                <input type="number" id="ntCount" min="0" placeholder="0">
+              </div>
+              <div class="form-field">
+                <label>Hypothetical R</label>
+                <input type="number" id="ntR" step="0.1" placeholder="0.0">
+              </div>
+              <div class="form-field">
+                <label>Wins</label>
+                <input type="number" id="ntWins" min="0" placeholder="0">
+              </div>
+              <div class="form-field">
+                <label>Losses</label>
+                <input type="number" id="ntLosses" min="0" placeholder="0">
+              </div>
+            </div>
+
+            <div class="card-title" style="margin:20px 0 4px;">Discipline</div>
+            <div class="card-sub" style="margin-bottom:12px;">Not trading when there's no setup is a skill</div>
+            <div class="review-form-section">
+              <label>Was staying flat the right call?</label>
+              <div class="chip-select" id="ntCorrectChips">
+                <div class="chip" data-ntcorrect="yes">Yes — no valid setup</div>
+                <div class="chip" data-ntcorrect="missed">No — I missed a valid setup</div>
+                <div class="chip" data-ntcorrect="unsure">Not sure</div>
+              </div>
+            </div>
+
+            <div class="review-form-section" style="margin-bottom:0;">
+              <label>Tags</label>
+              <div class="chip-select" id="ntTagChips"></div>
+            </div>
+
+            <div class="card-title" style="margin:20px 0 4px;">Tomorrow's plan</div>
+            <div class="review-form-section" style="margin-bottom:0;">
+              <textarea id="ntPlan" placeholder="e.g. AM only. Wait for the PDL sweep before considering an entry..."></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note-columns" id="tradedPanel">
         <div>
           <div class="phase-header">
             <div>

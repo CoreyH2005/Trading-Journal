@@ -1064,6 +1064,13 @@ button, input, select, textarea {
 .note-columns { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; align-items: start; }
 @media (max-width: 900px) { .note-columns { grid-template-columns: 1fr; } }
 
+.daytype-bar {
+  display: flex; align-items: center; gap: 14px;
+  background: var(--bg-elevated-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: 10px 14px; margin-bottom: 18px;
+}
+.daytype-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); flex: 0 0 auto; }
+
 .daily-phase { border-left: 2px solid var(--border); }
 .phase-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
 .state-row { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }

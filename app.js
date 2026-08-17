@@ -58,6 +58,10 @@ let state = {
   dailyRating: null,
   dailyTags: [],
   dailyChecks: [],
+  dayType: 'traded',
+  ntReasons: [],
+  ntTags: [],
+  ntCorrect: null,
   dayViewMode: 'day',
   dailyRange: 'thisMonth',
   openDays: [],
@@ -2295,6 +2299,23 @@ function renderWeekFeed(dates, trades) {
 
 function renderNotePreview(e) {
   const bits = [];
+  if (e.dayType === 'backtest' || e.dayType === 'notrade') {
+    if (e.ntLearned) bits.push(`<div class="past-daily-block"><div class="past-daily-block-label">What I learned</div><div class="past-daily-block-text" style="color:var(--gold);">${escapeHtml(e.ntLearned)}</div></div>`);
+    if (e.ntStudied) bits.push(`<div class="past-daily-block"><div class="past-daily-block-label">Studied</div><div class="past-daily-block-text">${escapeHtml(e.ntStudied)}</div></div>`);
+    const tally = [];
+    if (e.ntCount) tally.push(`${e.ntCount} setups reviewed`);
+    if (e.ntR) tally.push(`${parseFloat(e.ntR) >= 0 ? '+' : ''}${e.ntR}R hypothetical`);
+    if (e.ntWins || e.ntLosses) tally.push(`${e.ntWins || 0}W / ${e.ntLosses || 0}L`);
+    const badges = [];
+    if (e.dayType === 'backtest') badges.push('Backtest day'); else badges.push('No-trade day');
+    (e.ntReasons || []).forEach(r => badges.push(r));
+    (e.ntTags || []).forEach(t => badges.push(t));
+    return `<div class="day-note-preview">
+      <div class="trade-entry-badges" style="margin-bottom:8px;">${badges.map(b => `<span class="badge badge-tf">${escapeHtml(b)}</span>`).join('')}</div>
+      ${tally.length ? `<div class="past-daily-block"><div class="past-daily-block-label">Tally</div><div class="past-daily-block-text" style="font-family:var(--font-mono); font-size:11.5px;">${tally.join('  ·  ')}</div></div>` : ''}
+      ${bits.join('')}
+    </div>`;
+  }
   if (e.lesson) bits.push(`<div class="past-daily-block"><div class="past-daily-block-label">Lesson</div><div class="past-daily-block-text" style="color:var(--gold);">${escapeHtml(e.lesson)}</div></div>`);
   if (e.improve) bits.push(`<div class="past-daily-block"><div class="past-daily-block-label">To improve</div><div class="past-daily-block-text">${escapeHtml(e.improve)}</div></div>`);
   const meta = [];
@@ -2436,6 +2457,39 @@ function renderCarryover(date) {
     <div class="carryover-text">${escapeHtml(prior.plan)}</div></div>` : '';
 }
 
+/* ---------- day type: traded / no-trade / backtest ---------- */
+const NO_TRADE_REASONS = ['No valid setup', 'Outside my session', 'News risk', 'Choppy / low volatility', 'Already hit daily limit', 'Not in the right headspace', 'Unavailable / busy', 'Deliberate rest day'];
+const NT_TAGS = ['Patient', 'Disciplined', 'Studied', 'Backtested', 'Reviewed trades', 'Missed setup', 'Bored', 'Tempted to force'];
+
+function renderNoTradeChips() {
+  document.getElementById('noTradeReasonChips').innerHTML = NO_TRADE_REASONS.map(r =>
+    `<div class="chip ${state.ntReasons.includes(r) ? 'selected' : ''}" onclick="toggleNtReason('${r}')">${r}</div>`).join('');
+  document.getElementById('ntTagChips').innerHTML = NT_TAGS.map(t =>
+    `<div class="chip ${state.ntTags.includes(t) ? 'selected' : ''}" onclick="toggleNtTag('${t}')">${t}</div>`).join('');
+  document.querySelectorAll('#ntCorrectChips .chip').forEach(c =>
+    c.classList.toggle('selected', c.dataset.ntcorrect === state.ntCorrect));
+}
+function toggleNtReason(r) {
+  state.ntReasons = state.ntReasons.includes(r) ? state.ntReasons.filter(x => x !== r) : state.ntReasons.concat(r);
+  renderNoTradeChips();
+}
+function toggleNtTag(t) {
+  state.ntTags = state.ntTags.includes(t) ? state.ntTags.filter(x => x !== t) : state.ntTags.concat(t);
+  renderNoTradeChips();
+}
+
+function setDayType(type) {
+  state.dayType = type;
+  document.querySelectorAll('#dayTypeChips .chip').forEach(c => c.classList.toggle('selected', c.dataset.daytype === type));
+  const isFlat = type === 'notrade' || type === 'backtest';
+  document.getElementById('noTradePanel').classList.toggle('hidden', !isFlat);
+  document.getElementById('tradedPanel').classList.toggle('hidden', isFlat);
+  document.getElementById('noTradeTitle').textContent = type === 'backtest' ? 'Backtest / study day' : 'No-trade day';
+  document.getElementById('noTradeSub').textContent = type === 'backtest'
+    ? 'What you studied and what it taught you'
+    : 'Why you stayed flat — and what you saw';
+}
+
 function openDailyNote(date) {
   state.dailyDate = date;
   const e = getDailyEntry(date);
@@ -2458,6 +2512,21 @@ function openDailyNote(date) {
   state.dailyState = e && e.stateScores ? Object.assign({}, e.stateScores) : { sleep: null, energy: null, focus: null, stress: null };
   setDailyDiscipline(e ? (e.discipline || null) : null);
   setDailyRating(e ? (e.rating || null) : null);
+
+  // no-trade / backtest fields
+  const nv = (id, v) => document.getElementById(id).value = (v == null ? '' : v);
+  nv('ntMarket', e && e.ntMarket); nv('ntStudied', e && e.ntStudied);
+  nv('ntLearned', e && e.ntLearned); nv('ntPlan', e && e.ntPlan);
+  nv('ntCount', e && e.ntCount); nv('ntR', e && e.ntR);
+  nv('ntWins', e && e.ntWins); nv('ntLosses', e && e.ntLosses);
+  state.ntReasons = e && e.ntReasons ? e.ntReasons.slice() : [];
+  state.ntTags = e && e.ntTags ? e.ntTags.slice() : [];
+  state.ntCorrect = e ? (e.ntCorrect || null) : null;
+  renderNoTradeChips();
+
+  // Default the day type: saved value wins, otherwise infer from whether trades exist.
+  setDayType(e && e.dayType ? e.dayType : (dayTrades.length ? 'traded' : 'notrade'));
+
   renderDailyTagChips(); renderChecklist(); renderStateChips(); renderCarryover(date);
   document.getElementById('deleteDailyBtn').style.display = e ? '' : 'none';
   openModal('dailyNoteOverlay');
@@ -2481,7 +2550,11 @@ document.getElementById('saveDailyBtn').addEventListener('click', () => {
     plan: g('dailyPlan'), mindset: g('dailyMindset'),
     discipline: state.dailyDiscipline, rating: state.dailyRating,
     tags: state.dailyTags.slice(), checks: state.dailyChecks.slice(),
-    stateScores: Object.assign({}, state.dailyState)
+    stateScores: Object.assign({}, state.dailyState),
+    dayType: state.dayType,
+    ntMarket: g('ntMarket'), ntStudied: g('ntStudied'), ntLearned: g('ntLearned'), ntPlan: g('ntPlan'),
+    ntCount: g('ntCount'), ntR: g('ntR'), ntWins: g('ntWins'), ntLosses: g('ntLosses'),
+    ntReasons: state.ntReasons.slice(), ntTags: state.ntTags.slice(), ntCorrect: state.ntCorrect
   };
   const hasContent = Object.entries(data).some(([k, v]) => k !== 'date' && (
     (typeof v === 'string' && v) || (Array.isArray(v) && v.length) || (typeof v === 'number') ||
@@ -2506,6 +2579,11 @@ document.getElementById('deleteDailyBtn').addEventListener('click', () => {
 });
 
 /* ---------- events ---------- */
+document.querySelectorAll('#dayTypeChips .chip').forEach(c =>
+  c.addEventListener('click', () => setDayType(c.dataset.daytype)));
+document.querySelectorAll('#ntCorrectChips .chip').forEach(c =>
+  c.addEventListener('click', () => { state.ntCorrect = state.ntCorrect === c.dataset.ntcorrect ? null : c.dataset.ntcorrect; renderNoTradeChips(); }));
+
 document.querySelectorAll('.seg-btn[data-dayview]').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.seg-btn[data-dayview]').forEach(x => x.classList.remove('active'));
   b.classList.add('active');
