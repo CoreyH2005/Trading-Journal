@@ -23,7 +23,8 @@ const STORAGE_KEYS = {
   expenses: 'edge_expenses_v1',
   payouts: 'edge_payouts_v1',
   consistencyMigrated: 'edge_consistency_migrated_v1',
-  manualFinance: 'edge_manual_finance_v1'
+  manualFinance: 'edge_manual_finance_v1',
+  daily: 'edge_daily_v1'
 };
 
 let state = {
@@ -51,6 +52,13 @@ let state = {
   csvRows: null,
   csvHeaders: null,
   pendingAnalysis: null,
+  dailyEntries: [],
+  dailyDate: null,
+  dailyDiscipline: null,
+  dailyRating: null,
+  dailyTags: [],
+  dailyChecks: [],
+  dailyState: { sleep: null, energy: null, focus: null, stress: null },
   dashRange: 'all',
   dashDateFrom: null,
   dashDateTo: null
@@ -102,6 +110,7 @@ function loadState() {
     state.expenses = JSON.parse(localStorage.getItem(STORAGE_KEYS.expenses)) || [];
     state.payouts = JSON.parse(localStorage.getItem(STORAGE_KEYS.payouts)) || [];
     state.manualFinance = JSON.parse(localStorage.getItem(STORAGE_KEYS.manualFinance)) || { payoutTotal: null, expenseTotal: null };
+    state.dailyEntries = JSON.parse(localStorage.getItem(STORAGE_KEYS.daily)) || [];
   } catch (e) {
     state.accounts = []; state.trades = []; state.reviews = [];
     state.playbook = { rules: '', setups: [] }; state.certificates = []; state.expenses = []; state.payouts = [];
@@ -146,6 +155,7 @@ function saveCertificates() { localStorage.setItem(STORAGE_KEYS.certificates, JS
 function saveExpenses() { localStorage.setItem(STORAGE_KEYS.expenses, JSON.stringify(state.expenses)); }
 function savePayouts() { localStorage.setItem(STORAGE_KEYS.payouts, JSON.stringify(state.payouts)); }
 function saveManualFinance() { localStorage.setItem(STORAGE_KEYS.manualFinance, JSON.stringify(state.manualFinance)); }
+function saveDaily() { localStorage.setItem(STORAGE_KEYS.daily, JSON.stringify(state.dailyEntries)); }
 
 function seedPlaybook() {
   state.playbook = {
@@ -330,6 +340,7 @@ function initNav() {
       if (item.dataset.page === 'review') renderReview();
       if (item.dataset.page === 'playbook') renderPlaybook();
       if (item.dataset.page === 'breakdown') renderBreakdown();
+      if (item.dataset.page === 'daily') renderDaily();
       if (item.dataset.page === 'certificates') renderCertificates();
       if (item.dataset.page === 'expenses') renderExpenses();
     });
@@ -2089,6 +2100,334 @@ function saveAnalysisToReview() {
 
 document.getElementById('runAnalysisBtn').addEventListener('click', runWeeklyAnalysis);
 
+/* ============================================
+   DAILY JOURNAL
+   Pre-market plan → post-session review, with an objective process
+   scorecard, state tracking, and an accountability loop that carries
+   yesterday's plan into today.
+   ============================================ */
+
+const DAILY_TAGS = ['No setup', 'Patient', 'Disciplined', 'A+ setup', 'FOMO', 'Overtraded', 'Revenge', 'Tired', 'Distracted', 'Rushed', 'Hesitated', 'Moved stop'];
+
+// Objective process checks — these score discipline independently of P&L.
+const PROCESS_CHECKS = [
+  { id: 'plan', text: 'Wrote a pre-market plan before the session' },
+  { id: 'levels', text: 'Marked key levels / HTF context beforehand' },
+  { id: 'session', text: 'Only traded inside my planned session window' },
+  { id: 'criteria', text: 'Every entry met my A+ criteria' },
+  { id: 'size', text: 'Sized correctly on every trade' },
+  { id: 'stop', text: 'Never moved a stop against me' },
+  { id: 'limit', text: 'Respected my daily loss limit / trade cap' },
+  { id: 'nochase', text: 'Did not chase or revenge trade' },
+  { id: 'journal', text: 'Journalled the day properly' }
+];
+
+const STATE_SCALES = [
+  { key: 'sleep', el: 'dailySleepChips', labels: ['Awful', 'Poor', 'OK', 'Good', 'Great'] },
+  { key: 'energy', el: 'dailyEnergyChips', labels: ['Drained', 'Low', 'OK', 'Good', 'High'] },
+  { key: 'focus', el: 'dailyFocusChips', labels: ['Scattered', 'Poor', 'OK', 'Sharp', 'Locked in'] },
+  { key: 'stress', el: 'dailyStressChips', labels: ['Calm', 'Mild', 'Medium', 'High', 'Severe'] }
+];
+
+function getDailyEntry(date) { return state.dailyEntries.find(d => d.date === date); }
+
+/* ---- chip/checkbox renderers ---- */
+function renderDailyTagChips() {
+  document.getElementById('dailyTagChips').innerHTML = DAILY_TAGS.map(t =>
+    `<div class="chip ${state.dailyTags.includes(t) ? 'selected' : ''}" onclick="toggleDailyTag('${t}')">${t}</div>`
+  ).join('');
+}
+function toggleDailyTag(tag) {
+  if (state.dailyTags.includes(tag)) state.dailyTags = state.dailyTags.filter(t => t !== tag);
+  else state.dailyTags.push(tag);
+  renderDailyTagChips();
+}
+
+function renderStateChips() {
+  STATE_SCALES.forEach(s => {
+    document.getElementById(s.el).innerHTML = s.labels.map((lab, i) =>
+      `<div class="chip ${state.dailyState[s.key] === (i + 1) ? 'selected' : ''}" onclick="setDailyState('${s.key}', ${i + 1})" title="${lab}">${i + 1}</div>`
+    ).join('') + `<span style="font-size:11px; color:var(--text-muted); margin-left:6px; align-self:center;">${state.dailyState[s.key] ? s.labels[state.dailyState[s.key] - 1] : ''}</span>`;
+  });
+}
+function setDailyState(key, val) {
+  state.dailyState[key] = state.dailyState[key] === val ? null : val;
+  renderStateChips();
+}
+
+function renderChecklist() {
+  document.getElementById('dailyChecklist').innerHTML = PROCESS_CHECKS.map(c => `
+    <label class="check-row ${state.dailyChecks.includes(c.id) ? 'checked' : ''}">
+      <input type="checkbox" ${state.dailyChecks.includes(c.id) ? 'checked' : ''} onchange="toggleCheck('${c.id}')">
+      <span>${c.text}</span>
+    </label>`).join('');
+  updateProcessScore();
+}
+function toggleCheck(id) {
+  if (state.dailyChecks.includes(id)) state.dailyChecks = state.dailyChecks.filter(x => x !== id);
+  else state.dailyChecks.push(id);
+  renderChecklist();
+}
+function updateProcessScore() {
+  const n = state.dailyChecks.length, total = PROCESS_CHECKS.length;
+  const pct = Math.round((n / total) * 100);
+  const colour = pct >= 80 ? 'var(--green)' : (pct >= 50 ? 'var(--gold)' : 'var(--red)');
+  document.getElementById('dailyProcessScore').innerHTML =
+    `<span style="color:var(--text-muted);">Process score</span>
+     <span class="process-score-value" style="color:${colour};">${n}/${total} · ${pct}%</span>`;
+}
+
+function setDailyDiscipline(val) {
+  state.dailyDiscipline = val;
+  document.querySelectorAll('#dailyDisciplineChips .chip').forEach(c => c.classList.toggle('selected', c.dataset.discipline === val));
+}
+function setDailyRating(val) {
+  state.dailyRating = val;
+  document.querySelectorAll('#dailyRatingChips .chip').forEach(c => c.classList.toggle('selected', c.dataset.rating === String(val)));
+}
+
+/* ---- habit stats across all entries ---- */
+function renderDailyHabitStats() {
+  const entries = state.dailyEntries;
+  // Journaling streak, counting back from today/yesterday
+  const dates = new Set(entries.map(e => e.date));
+  let streak = 0;
+  let cursor = new Date();
+  if (!dates.has(isoOf(cursor))) cursor = addDays(cursor, -1);
+  while (dates.has(isoOf(cursor))) { streak++; cursor = addDays(cursor, -1); }
+
+  const last30 = entries.filter(e => e.date >= isoOf(addDays(new Date(), -29)));
+  const rated = last30.filter(e => e.rating);
+  const avgRating = rated.length ? rated.reduce((s, e) => s + e.rating, 0) / rated.length : null;
+  const scored = last30.filter(e => e.checks && e.checks.length);
+  const avgProcess = scored.length
+    ? scored.reduce((s, e) => s + (e.checks.length / PROCESS_CHECKS.length) * 100, 0) / scored.length
+    : null;
+  const followed = last30.filter(e => e.discipline === 'yes' || e.discipline === 'mostly').length;
+  const withDisc = last30.filter(e => e.discipline && e.discipline !== 'na').length;
+  const discPct = withDisc ? (followed / withDisc) * 100 : null;
+
+  document.getElementById('dailyHabitStats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Journaling streak</div><div class="stat-value ${streak > 0 ? 'positive' : ''}">${streak} day${streak === 1 ? '' : 's'}</div></div>
+    <div class="stat-card"><div class="stat-label">Avg process (30d)</div><div class="stat-value ${avgProcess == null ? '' : (avgProcess >= 80 ? 'positive' : (avgProcess >= 50 ? '' : 'negative'))}">${avgProcess == null ? '—' : avgProcess.toFixed(0) + '%'}</div></div>
+    <div class="stat-card"><div class="stat-label">Avg rating (30d)</div><div class="stat-value">${avgRating == null ? '—' : avgRating.toFixed(1) + '/5'}</div></div>
+    <div class="stat-card"><div class="stat-label">Plan followed (30d)</div><div class="stat-value ${discPct == null ? '' : (discPct >= 70 ? 'positive' : 'negative')}">${discPct == null ? '—' : discPct.toFixed(0) + '%'}</div></div>
+  `;
+}
+
+/* ---- carryover: yesterday's plan ---- */
+function renderCarryover(date) {
+  const el = document.getElementById('dailyCarryover');
+  // find the most recent entry before this date that has a plan
+  const prior = state.dailyEntries
+    .filter(e => e.date < date && e.plan)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!prior) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="carryover-card">
+    <div class="carryover-label">Your plan from ${fmtDate(prior.date)} — did you follow it?</div>
+    <div class="carryover-text">${escapeHtml(prior.plan)}</div>
+  </div>`;
+}
+
+/* ---- main render ---- */
+function renderDaily() {
+  if (!state.dailyDate) state.dailyDate = todayISO();
+  const date = state.dailyDate;
+
+  const d = new Date(date + 'T00:00:00');
+  document.getElementById('dailyDateLabel').textContent =
+    d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+    + (date === todayISO() ? ' · today' : '');
+  document.getElementById('dailyDatePicker').value = date;
+
+  renderDailyHabitStats();
+  renderCarryover(date);
+
+  const dayTrades = getLeaderTrades().filter(t => t.date === date);
+  const stats = computeStats(dayTrades);
+  const broke = dayTrades.filter(t => t.ruleFollowed === false).length;
+
+  document.getElementById('dailySummary').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Trades</div><div class="stat-value">${dayTrades.length}</div>${broke ? `<div class="stat-delta negative">${broke} rule-broken</div>` : ''}</div>
+    <div class="stat-card"><div class="stat-label">Net P&L</div><div class="stat-value ${stats.netPnl >= 0 ? 'positive' : 'negative'}">${dayTrades.length ? fmtMoney(stats.netPnl, { forceSign: true }) : '—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Net R</div><div class="stat-value ${stats.totalR >= 0 ? 'positive' : 'negative'}">${dayTrades.length ? (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(1) + 'R' : '—'}</div></div>
+    <div class="stat-card"><div class="stat-label">Win rate</div><div class="stat-value">${dayTrades.length ? stats.winRate.toFixed(0) + '%' : '—'}</div></div>
+  `;
+
+  const tl = document.getElementById('dailyTradesList');
+  if (!dayTrades.length) {
+    tl.innerHTML = `<div style="font-size:12.5px; color:var(--text-muted); padding:8px 0;">No trades logged on this day. That's still worth journaling — staying flat is a decision.</div>`;
+  } else {
+    tl.innerHTML = dayTrades.sort((a, b) => (a.entryTime || '').localeCompare(b.entryTime || '')).map(t => {
+      const oc = getOutcome(t);
+      return `<div class="daily-trade-row">
+        <div style="display:flex; align-items:center; gap:8px; min-width:0;">
+          <span class="outcome-pill ${oc}" style="flex:0 0 auto;">${oc === 'be' ? 'BE' : oc}</span>
+          <span style="color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+            ${t.entryTime ? escapeHtml(t.entryTime) + ' · ' : ''}${escapeHtml(t.symbol)} ${escapeHtml(t.direction)} · ${escapeHtml(t.setupName || t.model || '—')}
+          </span>
+          ${t.ruleFollowed === false ? '<span class="badge badge-rule-broken" style="flex:0 0 auto;">Rule broken</span>' : ''}
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; flex:0 0 auto;">
+          ${t.rMultiple != null && t.rMultiple !== '' ? `<span style="color:var(--text-muted); font-family:var(--font-mono); font-size:11.5px;">${parseFloat(t.rMultiple) >= 0 ? '+' : ''}${parseFloat(t.rMultiple)}R</span>` : ''}
+          <span class="${t.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-family:var(--font-mono);">${fmtMoney(t.pnl, { forceSign: true })}</span>
+          <button class="icon-btn" onclick="viewTradeDetail('${t.id}')" title="View">${ICONS.view}</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  const e = getDailyEntry(date);
+  const val = (id, v) => document.getElementById(id).value = v || '';
+  val('dailyBias', e && e.bias); val('dailySessionFocus', e && e.sessionFocus);
+  val('dailyLevels', e && e.levels); val('dailyCriteria', e && e.criteria);
+  val('dailyMarket', e && e.market); val('dailyGood', e && e.good);
+  val('dailyImprove', e && e.improve); val('dailyLesson', e && e.lesson);
+  val('dailyPlan', e && e.plan); val('dailyMindset', e && e.mindset);
+
+  state.dailyTags = e && e.tags ? e.tags.slice() : [];
+  state.dailyChecks = e && e.checks ? e.checks.slice() : [];
+  state.dailyState = e && e.stateScores ? Object.assign({}, e.stateScores) : { sleep: null, energy: null, focus: null, stress: null };
+  setDailyDiscipline(e ? (e.discipline || null) : null);
+  setDailyRating(e ? (e.rating || null) : null);
+  renderDailyTagChips(); renderChecklist(); renderStateChips();
+
+  document.getElementById('dailySavedHint').textContent = e
+    ? 'Saved entry loaded — edits overwrite it.'
+    : 'No entry saved for this day yet.';
+
+  renderPastDaily();
+}
+
+/* ---- past entries ---- */
+function renderPastDaily() {
+  const list = document.getElementById('pastDailyList');
+  const q = (document.getElementById('dailySearch').value || '').toLowerCase();
+  const filter = document.getElementById('dailyFilterDiscipline').value;
+
+  let sorted = state.dailyEntries.slice().sort((a, b) => b.date.localeCompare(a.date));
+  if (q) {
+    sorted = sorted.filter(e => [e.mindset, e.market, e.good, e.improve, e.lesson, e.plan, e.levels, e.criteria, (e.tags || []).join(' ')]
+      .filter(Boolean).join(' ').toLowerCase().includes(q));
+  }
+  if (filter === 'traded') sorted = sorted.filter(e => getLeaderTrades().some(t => t.date === e.date));
+  else if (filter === 'flat') sorted = sorted.filter(e => !getLeaderTrades().some(t => t.date === e.date));
+  else if (filter === 'no') sorted = sorted.filter(e => e.discipline === 'no');
+
+  if (!sorted.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-title">${state.dailyEntries.length ? 'No entries match' : 'No daily entries yet'}</div><div class="empty-state-sub">${state.dailyEntries.length ? 'Try a different search or filter.' : 'Write your first reflection above — trading day or not.'}</div></div>`;
+    return;
+  }
+
+  const DISC_LABEL = { yes: 'Plan followed', mostly: 'Mostly followed', no: 'Plan broken', na: 'No trades' };
+  list.innerHTML = sorted.map(e => {
+    const dayTrades = getLeaderTrades().filter(t => t.date === e.date);
+    const s = computeStats(dayTrades);
+    const d = new Date(e.date + 'T00:00:00');
+    const meta = [];
+    meta.push(dayTrades.length
+      ? `${fmtMoney(s.netPnl, { forceSign: true })} · ${(s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(1)}R · ${dayTrades.length} trade${dayTrades.length > 1 ? 's' : ''}`
+      : 'No trades');
+    if (e.checks && e.checks.length) meta.push(`${Math.round((e.checks.length / PROCESS_CHECKS.length) * 100)}% process`);
+    if (e.rating) meta.push(`${e.rating}/5`);
+    const st = e.stateScores || {};
+    const stateBits = ['sleep', 'energy', 'focus', 'stress'].filter(k => st[k]).map(k => `${k} ${st[k]}`);
+    return `
+    <div class="past-daily-card">
+      <div class="past-daily-header">
+        <div class="past-daily-date">${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
+        <div class="past-daily-meta">${meta.join(' · ')}</div>
+      </div>
+      ${(e.discipline || e.bias || (e.tags || []).length) ? `<div class="trade-entry-badges" style="margin-bottom:10px;">
+        ${e.discipline ? `<span class="badge ${e.discipline === 'no' ? 'badge-rule-broken' : 'badge-session'}">${DISC_LABEL[e.discipline] || e.discipline}</span>` : ''}
+        ${e.bias ? `<span class="badge badge-model">${escapeHtml(e.bias)}</span>` : ''}
+        ${(e.tags || []).map(t => `<span class="badge badge-tf">${escapeHtml(t)}</span>`).join('')}
+      </div>` : ''}
+      ${stateBits.length ? `<div class="past-daily-block"><div class="past-daily-block-label">State</div><div class="past-daily-block-text" style="font-family:var(--font-mono); font-size:11.5px;">${stateBits.join('  ·  ')}</div></div>` : ''}
+      ${e.criteria ? `<div class="past-daily-block"><div class="past-daily-block-label">Plan / A+ criteria</div><div class="past-daily-block-text">${escapeHtml(e.criteria)}</div></div>` : ''}
+      ${e.market ? `<div class="past-daily-block"><div class="past-daily-block-label">What happened</div><div class="past-daily-block-text">${escapeHtml(e.market)}</div></div>` : ''}
+      ${e.good ? `<div class="past-daily-block"><div class="past-daily-block-label">Did well</div><div class="past-daily-block-text">${escapeHtml(e.good)}</div></div>` : ''}
+      ${e.improve ? `<div class="past-daily-block"><div class="past-daily-block-label">To improve</div><div class="past-daily-block-text">${escapeHtml(e.improve)}</div></div>` : ''}
+      ${e.lesson ? `<div class="past-daily-block"><div class="past-daily-block-label">Lesson</div><div class="past-daily-block-text" style="color:var(--gold);">${escapeHtml(e.lesson)}</div></div>` : ''}
+      ${e.plan ? `<div class="past-daily-block"><div class="past-daily-block-label">Next day plan</div><div class="past-daily-block-text">${escapeHtml(e.plan)}</div></div>` : ''}
+      <div style="margin-top:10px; display:flex; gap:8px;">
+        <button class="btn btn-sm btn-ghost" onclick="openDailyDate('${e.date}')">Open</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteDailyEntry('${e.date}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openDailyDate(date) {
+  state.dailyDate = date;
+  renderDaily();
+  document.getElementById('page-daily').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function deleteDailyEntry(date) {
+  if (!confirm('Delete the daily entry for ' + fmtDate(date) + '?')) return;
+  state.dailyEntries = state.dailyEntries.filter(e => e.date !== date);
+  saveDaily();
+  renderDaily();
+}
+
+/* ---- events ---- */
+document.getElementById('dailyPrevBtn').addEventListener('click', () => {
+  state.dailyDate = isoOf(addDays(new Date(state.dailyDate + 'T00:00:00'), -1)); renderDaily();
+});
+document.getElementById('dailyNextBtn').addEventListener('click', () => {
+  state.dailyDate = isoOf(addDays(new Date(state.dailyDate + 'T00:00:00'), 1)); renderDaily();
+});
+document.getElementById('dailyTodayBtn').addEventListener('click', () => { state.dailyDate = todayISO(); renderDaily(); });
+document.getElementById('dailyDatePicker').addEventListener('change', function () {
+  if (this.value) { state.dailyDate = this.value; renderDaily(); }
+});
+document.querySelectorAll('#dailyDisciplineChips .chip').forEach(c =>
+  c.addEventListener('click', () => setDailyDiscipline(c.dataset.discipline)));
+document.querySelectorAll('#dailyRatingChips .chip').forEach(c =>
+  c.addEventListener('click', () => setDailyRating(parseInt(c.dataset.rating, 10))));
+document.getElementById('dailySearch').addEventListener('input', renderPastDaily);
+document.getElementById('dailyFilterDiscipline').addEventListener('change', renderPastDaily);
+
+document.getElementById('copyPrevPlanBtn').addEventListener('click', () => {
+  const prior = state.dailyEntries.filter(e => e.date < state.dailyDate && e.plan)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!prior) { showToast('No previous plan found'); return; }
+  const box = document.getElementById('dailyCriteria');
+  box.value = box.value ? box.value + '\n' + prior.plan : prior.plan;
+  showToast('Pulled in plan from ' + fmtDateShort(prior.date));
+});
+
+document.getElementById('saveDailyBtn').addEventListener('click', () => {
+  const date = state.dailyDate;
+  const g = id => document.getElementById(id).value.trim();
+  const data = {
+    date,
+    bias: g('dailyBias'), sessionFocus: g('dailySessionFocus'),
+    levels: g('dailyLevels'), criteria: g('dailyCriteria'),
+    market: g('dailyMarket'), good: g('dailyGood'), improve: g('dailyImprove'),
+    lesson: g('dailyLesson'), plan: g('dailyPlan'), mindset: g('dailyMindset'),
+    discipline: state.dailyDiscipline, rating: state.dailyRating,
+    tags: state.dailyTags.slice(), checks: state.dailyChecks.slice(),
+    stateScores: Object.assign({}, state.dailyState)
+  };
+  const hasContent = Object.values(data).some(v =>
+    (typeof v === 'string' && v && v !== date) ||
+    (Array.isArray(v) && v.length) ||
+    (typeof v === 'number') ||
+    (v && typeof v === 'object' && Object.values(v).some(x => x))
+  );
+  if (!hasContent) { showToast('Nothing to save yet'); return; }
+  const existing = getDailyEntry(date);
+  if (existing) Object.assign(existing, data);
+  else { data.id = uid(); state.dailyEntries.push(data); }
+  saveDaily();
+  renderDailyHabitStats();
+  renderPastDaily();
+  document.getElementById('dailySavedHint').textContent = 'Saved.';
+  showToast('Daily entry saved');
+});
+
+
 /* ---------------- Modal helpers ---------------- */
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
@@ -2115,6 +2454,7 @@ function exportBackup() {
     accounts: state.accounts, trades: state.trades, reviews: state.reviews,
     playbook: state.playbook, certificates: state.certificates,
     expenses: state.expenses, payouts: state.payouts, manualFinance: state.manualFinance,
+    dailyEntries: state.dailyEntries,
     exportedAt: new Date().toISOString()
   };
   downloadFile('edge-backup-' + todayISO() + '.json', JSON.stringify(data, null, 2), 'application/json');
@@ -2155,7 +2495,8 @@ document.getElementById('restoreFileInput').addEventListener('change', e => {
       state.expenses = data.expenses || [];
       state.payouts = data.payouts || [];
       state.manualFinance = data.manualFinance || { payoutTotal: null, expenseTotal: null };
-      saveAccounts(); saveTrades(); saveReviews(); savePlaybook(); saveCertificates(); saveExpenses(); savePayouts(); saveManualFinance();
+      state.dailyEntries = data.dailyEntries || [];
+      saveAccounts(); saveTrades(); saveReviews(); savePlaybook(); saveCertificates(); saveExpenses(); savePayouts(); saveManualFinance(); saveDaily();
       renderAccountSwitcher(); renderAll();
       showToast('Backup restored');
     } catch (err) { alert('Could not read that file — is it a valid EDGE backup JSON?'); }
@@ -2167,8 +2508,8 @@ document.getElementById('clearDataBtn').addEventListener('click', () => {
   if (!confirm('This deletes every account, trade, review, playbook entry, certificate, expense, and payout permanently. Continue?')) return;
   state.accounts = []; state.trades = []; state.reviews = [];
   state.playbook = { rules: '', setups: [] }; state.certificates = [];
-  state.expenses = []; state.payouts = []; state.manualFinance = { payoutTotal: null, expenseTotal: null };
-  saveAccounts(); saveTrades(); saveReviews(); savePlaybook(); saveCertificates(); saveExpenses(); savePayouts(); saveManualFinance();
+  state.expenses = []; state.payouts = []; state.manualFinance = { payoutTotal: null, expenseTotal: null }; state.dailyEntries = [];
+  saveAccounts(); saveTrades(); saveReviews(); savePlaybook(); saveCertificates(); saveExpenses(); savePayouts(); saveManualFinance(); saveDaily();
   renderAccountSwitcher(); renderAll();
   showToast('All data cleared');
 });
@@ -2280,6 +2621,7 @@ function renderAll() {
   renderBreakdown();
   renderCertificates();
   renderExpenses();
+  renderDaily();
   populatePayoutAccountSelect();
 }
 
