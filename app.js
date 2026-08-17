@@ -2179,6 +2179,10 @@ function renderDayFeed() {
   const dateSet = new Set();
   trades.forEach(t => dateSet.add(t.date));
   state.dailyEntries.forEach(e => dateSet.add(e.date));
+  // Always surface today so you can journal it (backtesting, no-trade days, etc.)
+  // without having to find it on the calendar first.
+  const todayStr = todayISO();
+  if ((!from || todayStr >= from) && (!to || todayStr <= to)) dateSet.add(todayStr);
   let dates = [...dateSet].filter(d => (!from || d >= from) && (!to || d <= to));
 
   if (state.dayViewMode === 'week') return renderWeekFeed(dates, trades);
@@ -2200,7 +2204,7 @@ function renderDayFeed() {
     <div class="day-card ${cls} ${open ? 'open' : ''}" id="daycard_${date}">
       <div class="day-card-head" onclick="toggleDayCard('${date}')">
         <span class="day-chev">▶</span>
-        <span class="day-date">${d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</span>
+        <span class="day-date">${d.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}${date === todayISO() ? ' <span class="badge badge-session" style="vertical-align:middle;">Today</span>' : ''}</span>
         <span class="day-pnl ${dayTrades.length ? (s.netPnl >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}" style="${dayTrades.length ? '' : 'color:var(--text-muted);'}">
           ${dayTrades.length ? 'Net P&L ' + fmtMoney(s.netPnl, { forceSign: true }) : 'No trades'}
         </span>
