@@ -527,8 +527,8 @@ function renderEdgeScore(trades, stats, drawdownSeries, startingBalance) {
       labels: ['Win %', 'Profit factor', 'Win/loss', 'Recovery', 'Consistency', 'Drawdown'],
       datasets: [{
         data: axes,
-        backgroundColor: 'rgba(62,207,142,0.15)',
-        borderColor: '#3ecf8e',
+        backgroundColor: 'rgba(52,211,153,0.15)',
+        borderColor: '#34d399',
         borderWidth: 1.5,
         pointRadius: 0
       }]
@@ -561,12 +561,12 @@ function renderBalanceChart(trades, startingBalance, account) {
   const ctx = document.getElementById('balanceChart');
   if (charts.balance) charts.balance.destroy();
   const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 200);
-  gradient.addColorStop(0, 'rgba(62,207,142,0.28)');
-  gradient.addColorStop(1, 'rgba(62,207,142,0.0)');
+  gradient.addColorStop(0, 'rgba(52,211,153,0.28)');
+  gradient.addColorStop(1, 'rgba(52,211,153,0.0)');
 
   charts.balance = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ data, borderColor: '#3ecf8e', backgroundColor: gradient, borderWidth: 2, fill: true, pointRadius: 0, tension: 0.25 }] },
+    data: { labels, datasets: [{ data, borderColor: '#34d399', backgroundColor: gradient, borderWidth: 2, fill: true, pointRadius: 0, tension: 0.25 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtMoney(c.raw) } } },
@@ -583,7 +583,7 @@ function renderDailyPnlChart(trades) {
   trades.forEach(t => { byDay[t.date] = (byDay[t.date] || 0) + t.pnl; });
   const days = Object.keys(byDay).sort().slice(-14);
   const data = days.map(d => byDay[d]);
-  const colors = data.map(v => v >= 0 ? '#3ecf8e' : '#ff5c5c');
+  const colors = data.map(v => v >= 0 ? '#34d399' : '#f87171');
 
   const ctx = document.getElementById('dailyPnlChart');
   if (charts.dailyPnl) charts.dailyPnl.destroy();
@@ -608,12 +608,12 @@ function renderDrawdownChart(drawdownSeries) {
   const ctx = document.getElementById('drawdownChart');
   if (charts.drawdown) charts.drawdown.destroy();
   const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 120);
-  gradient.addColorStop(0, 'rgba(255,92,92,0.0)');
-  gradient.addColorStop(1, 'rgba(255,92,92,0.3)');
+  gradient.addColorStop(0, 'rgba(248,113,113,0.0)');
+  gradient.addColorStop(1, 'rgba(248,113,113,0.3)');
 
   charts.drawdown = new Chart(ctx, {
     type: 'line',
-    data: { labels, datasets: [{ data, borderColor: '#ff5c5c', backgroundColor: gradient, borderWidth: 1.5, fill: true, pointRadius: 0, tension: 0.2 }] },
+    data: { labels, datasets: [{ data, borderColor: '#f87171', backgroundColor: gradient, borderWidth: 1.5, fill: true, pointRadius: 0, tension: 0.2 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtMoney(c.raw) } } },
@@ -1543,7 +1543,7 @@ function renderBreakdown() {
   if (charts.breakdownDow) charts.breakdownDow.destroy();
   charts.breakdownDow = new Chart(ctx, {
     type: 'bar',
-    data: { labels: dowOrder, datasets: [{ data: dowData, backgroundColor: dowData.map(v => v >= 0 ? '#3ecf8e' : '#ff5c5c'), borderRadius: 4 }] },
+    data: { labels: dowOrder, datasets: [{ data: dowData, backgroundColor: dowData.map(v => v >= 0 ? '#34d399' : '#f87171'), borderRadius: 4 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmtMoney(c.raw) } } },
@@ -1584,7 +1584,7 @@ function renderBreakdown() {
       type: 'bar',
       data: {
         labels: buckets.map(b => b.label),
-        datasets: [{ data: counts, backgroundColor: buckets.map(b => b.label.includes('-') ? '#ff5c5c' : (b.label === '0 to 1R' ? '#5c636b' : '#3ecf8e')), borderRadius: 4 }]
+        datasets: [{ data: counts, backgroundColor: buckets.map(b => b.label.includes('-') ? '#f87171' : (b.label === '0 to 1R' ? '#5c636b' : '#34d399')), borderRadius: 4 }]
       },
       options: {
         responsive: true, maintainAspectRatio: false,
@@ -2351,8 +2351,8 @@ function drawDayChart(date) {
       labels: pts.map(p => p.x),
       datasets: [{
         data: pts.map(p => p.y),
-        borderColor: up ? '#3ecf8e' : '#ff5c5c',
-        backgroundColor: up ? 'rgba(62,207,142,0.12)' : 'rgba(255,92,92,0.12)',
+        borderColor: up ? '#34d399' : '#f87171',
+        backgroundColor: up ? 'rgba(52,211,153,0.12)' : 'rgba(248,113,113,0.12)',
         fill: true, tension: 0.3, pointRadius: 2, borderWidth: 2
       }]
     },
