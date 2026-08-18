@@ -63,6 +63,7 @@ let state = {
   ntTags: [],
   ntCorrect: null,
   dayViewMode: 'day',
+  showEmptyDays: true,
   dailyRange: 'thisMonth',
   openDays: [],
   dayCalMonth: new Date().getMonth(),
@@ -2187,6 +2188,15 @@ function renderDayFeed() {
   // without having to find it on the calendar first.
   const todayStr = todayISO();
   if ((!from || todayStr >= from) && (!to || todayStr <= to)) dateSet.add(todayStr);
+
+  // Fill in every calendar day in range so you can journal any day (e.g. reflecting on
+  // yesterday) without hunting on the calendar. Capped so "all time" stays sane.
+  if (state.showEmptyDays && from) {
+    let cur = new Date(from + 'T00:00:00');
+    const stop = new Date((to || todayStr) + 'T00:00:00');
+    let guard = 0;
+    while (cur <= stop && guard < 400) { dateSet.add(isoOf(cur)); cur = addDays(cur, 1); guard++; }
+  }
   let dates = [...dateSet].filter(d => (!from || d >= from) && (!to || d <= to));
 
   if (state.dayViewMode === 'week') return renderWeekFeed(dates, trades);
@@ -2201,7 +2211,9 @@ function renderDayFeed() {
     const dayTrades = trades.filter(t => t.date === date);
     const s = computeStats(dayTrades);
     const entry = getDailyEntry(date);
-    const cls = !dayTrades.length ? 'flat' : (s.netPnl > 0 ? 'win' : (s.netPnl < 0 ? 'loss' : 'flat'));
+    let cls = !dayTrades.length ? 'flat' : (s.netPnl > 0 ? 'win' : (s.netPnl < 0 ? 'loss' : 'flat'));
+    // A day with neither trades nor a note is "empty" — de-emphasised in the feed.
+    if (!dayTrades.length && !entry) cls += ' empty-day';
     const d = new Date(date + 'T00:00:00');
     const open = state.openDays.includes(date);
     return `
@@ -2590,6 +2602,11 @@ document.querySelectorAll('.seg-btn[data-dayview]').forEach(b => b.addEventListe
   state.dayViewMode = b.dataset.dayview;
   renderDayFeed();
 }));
+document.getElementById('showEmptyToggle').addEventListener('click', function () {
+  this.classList.toggle('on');
+  state.showEmptyDays = this.classList.contains('on');
+  renderDayFeed();
+});
 document.getElementById('dailyRangeSelect').addEventListener('change', function () {
   state.dailyRange = this.value; renderDayFeed();
 });

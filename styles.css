@@ -1594,3 +1594,9 @@ input, select, textarea {
 .chart-box { border-radius: var(--radius-sm); }
 .daytype-bar { border-radius: 999px; }
 .divider, .nav-divider { background: var(--border-soft); }
+
+/* Empty days sit quietly in the feed so real activity still stands out */
+.day-card.empty-day { opacity: 0.55; }
+.day-card.empty-day:hover { opacity: 1; }
+.day-card.empty-day .day-card-head { padding: 11px 20px; }
+.day-card.empty-day .day-date { font-weight: 500; color: var(--text-secondary); }

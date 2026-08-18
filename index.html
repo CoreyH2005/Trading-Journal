@@ -244,6 +244,10 @@
           <button class="seg-btn active" data-dayview="day">Day</button>
           <button class="seg-btn" data-dayview="week">Week</button>
         </div>
+        <label class="toggle-row" style="padding:6px 12px; gap:9px; cursor:pointer; border-radius:999px;">
+          <span style="font-size:12px; color:var(--text-secondary); white-space:nowrap;">Show all days</span>
+          <div class="toggle-switch on" id="showEmptyToggle"></div>
+        </label>
         <select id="dailyRangeSelect">
           <option value="thisMonth">This month</option>
           <option value="30d">Last 30 days</option>
